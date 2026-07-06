@@ -141,6 +141,72 @@ pnpm verify:rls
 
 ---
 
+## Receta para agregar RLS a una tabla nueva
+
+Para que **toda tabla quede con la misma forma** que `profiles`/`patients`, seguir
+estos pasos al crearla (p. ej. `professionals` en ENG-43). El orden importa:
+GRANT primero, RLS después.
+
+**Checklist**
+
+- [ ] `GRANT` de tabla a `authenticated` (y a `anon` **solo** si hay datos públicos).
+- [ ] `enable row level security` (queda deny-all por defecto).
+- [ ] Política `select` / `insert` / `update` "propias" (`<col_dueño> = auth.uid()`).
+- [ ] Nada de `delete` ni políticas extra salvo que el caso lo pida → queda denegado.
+- [ ] Columnas que el usuario **no** debe cambiar (estados, rol) → trigger `BEFORE UPDATE`.
+- [ ] Versionar como migración en `prisma/migrations/`.
+- [ ] Validar con un script tipo `verify-rls.ts` (aislamiento entre dos usuarios).
+
+**Plantilla SQL** (reemplazar `<tabla>` y `<col_dueño>`, la FK al profile dueño):
+
+```sql
+-- 1) GRANTs (imprescindible en tablas creadas por Prisma)
+grant select, insert, update on public.<tabla> to authenticated;
+
+-- 2) Activar RLS (deny-all por defecto)
+alter table public.<tabla> enable row level security;
+
+-- 3) El dueño ve y modifica solo sus filas
+drop policy if exists <tabla>_select_own on public.<tabla>;
+create policy <tabla>_select_own on public.<tabla>
+  for select using (<col_dueño> = auth.uid());
+
+drop policy if exists <tabla>_insert_own on public.<tabla>;
+create policy <tabla>_insert_own on public.<tabla>
+  for insert with check (<col_dueño> = auth.uid());
+
+drop policy if exists <tabla>_update_own on public.<tabla>;
+create policy <tabla>_update_own on public.<tabla>
+  for update using (<col_dueño> = auth.uid())
+  with check (<col_dueño> = auth.uid());
+```
+
+**Caso `professionals` (ENG-43) — la variante con datos públicos**
+
+Según `modelo-de-datos/esquema.md`, los datos del profesional con
+`status = ACTIVO` son públicos (catálogo), pero el resto es privado y `status`
+es sensible. Sobre la plantilla, cambia esto:
+
+```sql
+-- Además de authenticated, anon puede leer SOLO los profesionales activos:
+grant select on public.professionals to anon, authenticated;
+
+-- Lectura pública restringida al catálogo activo:
+create policy professionals_select_public on public.professionals
+  for select using (status = 'ACTIVO');
+
+-- Lectura completa de su propia ficha para el dueño (incluye datos no públicos):
+create policy professionals_select_own on public.professionals
+  for select using (profile_id = auth.uid());
+
+-- `status` no lo cambia el profesional (lo valida el equipo) → trigger BEFORE UPDATE,
+-- igual que el candado de `role` en profiles.
+```
+
+La idea: **misma estructura para todas** (GRANT + RLS + políticas "propias" +
+trigger para columnas sensibles); solo se suma una política extra cuando hay un
+caso de lectura pública o de "profesional con relación vigente" (turnos, EP-03).
+
 ## Referencias
 
 - Row Level Security — Supabase Docs, https://supabase.com/docs/guides/database/postgres/row-level-security
