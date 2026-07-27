@@ -61,6 +61,15 @@ Perfil de paciente, 1:1 con `profiles` (cuando `role = PACIENTE`).
 
 **RLS:** el propio paciente; y profesionales con relación vigente (vía `appointments`) en modo lectura.
 
+**Ciclo de vida de la fila (ENG-47):** a diferencia de `professionals` —cuya fila la
+crea el trigger `handle_new_user` en el alta—, la fila de `patients` **no existe hasta
+que el paciente completa su perfil**. El registro solo pide email y contraseña, y
+`first_name`/`last_name` son `NOT NULL`, así que la fila nace en la primera carga del
+perfil (upsert). El backend expone `GET /patients/me` (devuelve `completed: false` si
+aún no la creó) y `PUT /patients/me` (crea o reemplaza el perfil completo). La escritura
+va con el cliente Supabase scopeado al JWT del paciente, de modo que RLS
+(`patients_insert_own` / `patients_update_own`) garantice que solo toque su propia fila.
+
 ### `professionals`
 Perfil de profesional, 1:1 con `profiles` (cuando `role = PROFESIONAL`).
 
