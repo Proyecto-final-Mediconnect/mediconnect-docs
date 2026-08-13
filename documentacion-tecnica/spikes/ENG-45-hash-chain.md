@@ -149,10 +149,17 @@ enlaces), mediana de 5 corridas, Node 22.12 en una notebook de desarrollo:
 | **1.000** | **13,7 ms** | **73× por debajo del límite** |
 | 10.000 | 117,5 ms | escala lineal |
 
-El costo es lineal y despreciable frente al I/O: leer las 1.000 filas de Postgres
-tarda más que verificarlas. Para el job semanal de verificación (ENG-85) esto
-significa que se puede recalcular la cadena completa de todos los pacientes sin
-pensar en optimizaciones.
+El costo es lineal y despreciable frente al I/O. Medido de punta a punta en CI
+(GitHub Actions, Postgres 15 como service container), leyendo las entradas de la
+base en vez de generarlas en memoria:
+
+```
+[ENG-45] 1.000 entradas — lectura 21,1 ms · verificación 25,9 ms · total 47,0 ms
+```
+
+Leer las filas cuesta casi lo mismo que verificarlas. Para el job semanal de
+verificación (ENG-85) esto significa que se puede recalcular la cadena completa
+de todos los pacientes sin pensar en optimizaciones.
 
 También hay un verificador **en SQL** (`spike_hash_chain_verify`) que chequea solo
 la estructura —génesis, contigüidad, enlace— sin recalcular hashes. Es el chequeo
