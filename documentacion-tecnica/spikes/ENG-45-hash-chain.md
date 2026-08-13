@@ -169,7 +169,7 @@ El costo es lineal y despreciable frente al I/O. Medido de punta a punta en CI
 base en vez de generarlas en memoria:
 
 ```
-[ENG-45] 1.000 entradas — lectura 21,1 ms · verificación 25,9 ms · total 47,0 ms
+[ENG-45] 1.000 entradas — lectura 17,8 ms · verificación 24,7 ms · total 42,5 ms
 ```
 
 Leer las filas cuesta casi lo mismo que verificarlas. Para el job semanal de
