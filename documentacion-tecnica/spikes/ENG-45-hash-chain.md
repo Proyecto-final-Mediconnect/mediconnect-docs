@@ -23,8 +23,8 @@ mediciones sobre cadenas de 100 a 10.000 entradas.
 |---|---|
 | Lógica pura (canonicalización, sellado, verificación) | `mediconnect-backend/src/common/hash-chain/hash-chain.ts` |
 | Tabla de prueba, triggers y verificador SQL | `mediconnect-backend/prisma/spikes/eng45_hash_chain.sql` |
-| 17 tests unitarios | `src/common/hash-chain/hash-chain.spec.ts` |
-| 10 tests de integración contra Postgres real | `test/hash-chain.integration.spec.ts` |
+| 19 tests unitarios | `src/common/hash-chain/hash-chain.spec.ts` |
+| 14 tests de integración contra Postgres real | `test/hash-chain.integration.spec.ts` |
 
 El SQL vive **fuera de `prisma/migrations`** a propósito: crea
 `spike_hash_chain_entries`, una tabla de prueba, y no debe correr en producción.
@@ -35,10 +35,12 @@ El módulo TypeScript no se registra en `AppModule` y no toca
 
 ```
 preimagen = patient_id        \n
+            professional_id   \n
             sequence_number   \n
             entry_type        \n
             fhir_resource_type\n
             canonical_json(content) \n
+            consultation_id   \n      (cadena vacía si no viene de una consulta)
             corrects_entry_id \n      (cadena vacía si no es una corrección)
             created_at        \n      (ISO-8601 UTC)
             previous_hash
@@ -48,11 +50,24 @@ content_hash = sha256_hex(preimagen)
 
 La primera entrada de cada paciente encadena contra el **hash génesis**: 64 ceros.
 
-Dos cosas que no son obvias:
+La lista vive en `PREIMAGE_COLUMNS` (`hash-chain.ts`) y **es contrato, no
+detalle**: cambiarla obliga a rehashear todo lo ya escrito, y en una tabla
+append-only eso significa migrar la cadena entera.
 
-- **Lo que no está en la preimagen no está protegido.** El `id` de la fila queda
-  afuera a propósito (lo genera la base y no aporta), pero cualquier campo que
-  ENG-57 agregue a la tabla y no agregue acá es modificable sin romper la cadena.
+Tres cosas que no son obvias:
+
+- **Lo que no está en la preimagen no está protegido**, y eso incluye columnas
+  que la tabla real *ya tiene*. `professional_id` está en la preimagen porque es
+  la autoría del asiento clínico: la Ley 26.529 art. 15 exige que el registro
+  identifique al profesional actuante, y es lo que un ataque realista tocaría
+  antes que el contenido — no hace falta falsificar el diagnóstico si alcanza con
+  cambiar quién lo firmó. Las únicas columnas fuera del hash son `id` (lo genera
+  la base; la identidad ya está dada por `patient_id` + `sequence_number`) y
+  `content_hash`, que es el resultado y no puede ser su propia entrada.
+- Para que esto no derive, un test de integración compara las columnas reales de
+  la tabla contra `PREIMAGE_COLUMNS ∪ NON_HASHED_COLUMNS` y **falla si aparece una
+  columna nueva**. Sin ese test, agregar un campo y olvidarse de decidir si entra
+  al hash no produce ningún síntoma hasta que alguien lo aprovecha.
 - El separador `\n` es seguro: el único campo de forma libre es `content`, y al
   pasar por la serialización canónica cualquier salto de línea real queda escapado
   como los dos caracteres `\` + `n`. Ningún campo puede inyectar un separador.
@@ -167,35 +182,70 @@ barato para correr seguido; el caro, que recalcula, corre en Node.
 
 ### Tests de detección de manipulación
 
-Los 4 escenarios de ataque se detectan, todos con la fila exacta donde se rompe:
+Los 5 escenarios de ataque se detectan, todos con la fila exacta donde se rompe:
 
-| Manipulación | Detectado como |
-|---|---|
-| Contenido reescrito por SQL directo | `CONTENT_TAMPERED` en la entrada tocada |
-| Contenido reescrito **y hash recalculado** | `BROKEN_LINK` en la entrada siguiente |
-| Entrada borrada del medio | `BROKEN_LINK` en la siguiente |
-| Cadena que no arranca en el génesis | `GENESIS_MISMATCH` |
+| Manipulación | Detectado como | Dónde corre |
+|---|---|---|
+| Contenido reescrito por SQL directo | `CONTENT_TAMPERED` en la entrada tocada | Postgres real |
+| Profesional firmante reasignado | `CONTENT_TAMPERED` en la entrada tocada | Postgres real |
+| Entrada borrada del medio | `BROKEN_LINK` en la siguiente | Postgres real |
+| Contenido reescrito **y hash recalculado** | `BROKEN_LINK` en la entrada siguiente | en memoria |
+| Cadena que no arranca en el génesis | `GENESIS_MISMATCH` | en memoria |
 
-El segundo es el que justifica la cadena: recalcular el hash de la entrada que se
+El cuarto es el que justifica la cadena: recalcular el hash de la entrada que se
 manipuló no alcanza, porque la siguiente sigue apuntando al hash viejo. Para que
 la manipulación pase inadvertida hay que **reescribir toda la cadena hacia
 adelante**.
 
-Los tests simulan al atacante con privilegios: deshabilitan el trigger
-append-only, hacen el `UPDATE` y lo vuelven a habilitar.
+Los tres primeros corren contra Postgres: simulan al atacante con privilegios,
+que deshabilita el trigger append-only, hace el `UPDATE` o el `DELETE` y lo vuelve
+a habilitar. Los dos últimos son tests unitarios sobre cadenas en memoria — la
+lógica de detección es la misma (`verifyChain` no sabe de dónde salieron las
+entradas), pero **conviene que ENG-57 sume el del hash recalculado contra base
+real**, porque es el escenario que sostiene el argumento entero y hoy no está
+probado de punta a punta.
 
 ## Lo que la cadena NO resuelve
 
-Conviene decirlo antes de que lo pregunte el jurado: **un atacante con acceso de
-superusuario a la base puede reescribir la cadena entera hacia adelante y quedar
-consistente.** Ninguna cadena de hash guardada en la misma base que protege puede
-evitar eso. Lo que la cadena garantiza es que la manipulación no puede ser
-*quirúrgica* ni *silenciosa*: hay que reescribir todo lo posterior.
+Conviene decirlo antes de que lo pregunte el jurado. Hay **dos** agujeros, y el
+segundo es más barato de explotar que el primero.
 
-La mitigación estándar es el **anclaje externo**: publicar periódicamente el hash
-de cabeza de cada paciente en un medio fuera del alcance de ese atacante (otra
-base, un log append-only de un tercero, un correo firmado). Con un ancla semanal,
-la ventana de reescritura queda acotada a los días desde el último anclaje.
+### 1. Reescritura completa hacia adelante
+
+**Un atacante con acceso de superusuario a la base puede reescribir la cadena
+entera hacia adelante y quedar consistente.** Ninguna cadena de hash guardada en
+la misma base que protege puede evitar eso. Lo que la cadena garantiza es que la
+manipulación no puede ser *quirúrgica* ni *silenciosa*: hay que reescribir todo lo
+posterior.
+
+### 2. Truncar la cola es indetectable
+
+Si se borran las **últimas** N entradas de un paciente, las que quedan siguen
+contiguas, enlazadas y arrancando en el génesis. `verifyChain` devuelve
+`valid: true` y `spike_hash_chain_verify` devuelve `ok`: **la cadena no tiene
+forma de saber cuál era su propia longitud.**
+
+Y no requiere reescribir nada. Clínicamente es el caso más plausible de los dos:
+para ocultar un diagnóstico reciente es mucho más simple borrarlo que falsificarlo.
+
+Hay un test que afirma explícitamente que esto **no** se detecta
+(`NO detecta el truncado de la cola`), justamente para que nadie asuma que la
+cadena sola alcanza.
+
+Esto cambia lo que ENG-85 tiene que guardar. No alcanza con recorrer las cadenas:
+en cada corrida hay que **persistir por paciente el `headHash` y el
+`sequence_number` de la cabeza**, y en la corrida siguiente comprobar que esa
+entrada siga existiendo con ese hash. Son dos columnas, pero tienen que estar
+**desde la primera corrida** o no hay contra qué comparar.
+
+### La mitigación cubre los dos
+
+El **anclaje externo** —publicar periódicamente el hash de cabeza de cada paciente
+en un medio fuera del alcance del atacante: otra base, un log append-only de un
+tercero, un correo firmado— resuelve los dos casos por el mismo mecanismo. El
+ancla fija a la vez el contenido y la longitud, así que una reescritura y un
+truncado se detectan igual. Con un ancla semanal, la ventana queda acotada a los
+días desde el último anclaje.
 
 No es parte de ENG-45 ni de ENG-57. Recomiendo abrirlo como tarea técnica de EP-06
 y engancharlo con ENG-85 (job semanal de verificación), que ya recorre las cadenas
@@ -207,21 +257,36 @@ y es el lugar natural para emitir el ancla.
    generarlo en la aplicación. Es bloqueante: sin esto la verificación no funciona.
 2. Promover `src/common/hash-chain/` a módulo real y usarlo desde el servicio de
    HC. La lógica ya está testeada; no hay que reescribirla.
-3. Portar los tres triggers (append-only, enlace en el insert) a una migración
-   Prisma de verdad, sumando las políticas RLS de la tabla.
-4. Congelar por escrito la lista de campos de la preimagen. Agregar un campo a la
-   tabla sin agregarlo al hash deja ese campo sin proteger, y no hay nada que avise.
+3. Portar los dos triggers (`spike_hash_chain_no_mutation`, append-only, y
+   `spike_hash_chain_link`, enlace en el insert) a una migración Prisma de verdad,
+   sumando las políticas RLS de la tabla.
+4. **Llevar `PREIMAGE_COLUMNS` tal cual a `clinical_record_entries`**, con
+   `professional_id` y `consultation_id` incluidos, y portar también el test que
+   compara las columnas de la tabla contra esa lista. Es lo único que avisa cuando
+   alguien agrega un campo y se olvida de decidir si entra al hash. Cambiar la
+   lista después obliga a rehashear todo lo escrito.
 5. `sequence_number` contiguo por paciente obliga a serializar los inserts de un
    mismo paciente. Con un profesional por consulta no es un problema; si alguna vez
-   dos fuentes escriben a la vez (el pipeline de IA y el profesional), hay que
-   resolver el reintento ante colisión de la unique `(patient_id, sequence_number)`.
-6. Abrir la tarea técnica de anclaje externo.
+   dos fuentes escriben a la vez (el pipeline de IA y el profesional), **el
+   reintento no es opcional**. Ojo con confiar en el `for update` del trigger de
+   enlace: bloquea la fila cabeza, pero al despertar no reevalúa el `limit 1` y
+   sigue viendo la cabeza vieja. Lo que realmente impide el duplicado es la unique
+   `(patient_id, sequence_number)`, así que hay que manejar la colisión y reintentar.
+6. Abrir la tarea técnica de anclaje externo, y **sumar a ENG-85 las dos columnas
+   de cabeza** (`headHash` + `sequence_number` por paciente) para detectar el
+   truncado de la cola. Tienen que existir desde la primera corrida.
+7. Dejar escrito el supuesto del round-trip: el hash se calcula sobre el objeto en
+   memoria y lo que se guarda es `jsonb`. Verifica porque el viaje
+   Node → `jsonb` → Node es exacto **para los valores que usamos**, no porque lo
+   sea en general (`jsonb` guarda los números como `numeric`). Mientras el único
+   que escriba sea Node se sostiene; si alguna vez escribe otra cosa —una
+   importación, un job en otro lenguaje— hay que revalidarlo antes.
 
 ## Cómo correr
 
 ```bash
 cd mediconnect-backend
 
-pnpm test hash-chain        # 17 tests unitarios, sin base
-pnpm run test:integration   # 10 tests contra Postgres 15 real (levanta Docker)
+pnpm test hash-chain        # 19 tests unitarios, sin base
+pnpm run test:integration   # 14 tests contra Postgres 15 real (levanta Docker)
 ```
