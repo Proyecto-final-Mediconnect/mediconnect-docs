@@ -7,7 +7,7 @@
 
 Validar —antes de implementar el chat— que Supabase Realtime con RLS activo
 entrega los mensajes **solo a los participantes de cada conversación**, y dejar
-decidido qué mecanismo usa ENG-56.
+decidido qué mecanismo usa ENG-70.
 
 La pregunta de fondo es si el chat puede apoyarse en Realtime hablando directo
 con el cliente, o si hace falta que el backend intermedie cada mensaje. Si RLS
@@ -27,7 +27,7 @@ autenticados, cinco suscripciones simultáneas y seis corridas.
 El SQL vive **fuera de `prisma/migrations`** a propósito: crea
 `spike_realtime_conversations` y `spike_realtime_messages`, y no toca
 `conversations` ni `messages` reales. El script no importa nada de `src/`: es un
-proceso suelto que habla con Supabase por HTTPS y WebSocket. ENG-56 se lleva el
+proceso suelto que habla con Supabase por HTTPS y WebSocket. ENG-70 se lleva el
 diseño, no los archivos.
 
 ## Por qué no es un test de CI
@@ -37,7 +37,7 @@ En ENG-45 las pruebas corren en CI contra un Postgres en Docker. Acá no se pued
 WebSocket. El contenedor de `docker-compose` no lo tiene, así que la validación
 exige un proyecto real de Supabase y se corre a mano.
 
-Tiene consecuencia para ENG-56: **el aislamiento del chat no se va a poder cubrir
+Tiene consecuencia para ENG-70: **el aislamiento del chat no se va a poder cubrir
 con tests de CI** como se hizo con la cadena de hash. O se acepta esa brecha, o se
 cubre con un test contra el proyecto de desarrollo fuera del pipeline.
 
@@ -115,7 +115,7 @@ recrearla y suscribirse de inmediato, por si era propagación del cambio de
 publicación) y **no se reprodujo**: esa corrida pasó 5/5. La causa quedó sin
 determinar.
 
-No alcanza para rechazar Realtime, pero sí para fijar una regla en ENG-56:
+No alcanza para rechazar Realtime, pero sí para fijar una regla en ENG-70:
 
 > **El stream no es la fuente de verdad.** Al abrir una conversación hay que traer
 > el historial por HTTP *después* de suscribirse y reconciliar por `id`, y no
@@ -197,9 +197,14 @@ plan Pro, no un rediseño.
   cliente estaba desconectado (túnel, cambio de red) no se exploró, y es el caso
   más común en mobile. Se resuelve con la misma reconciliación por HTTP.
 - **No se probó la escritura.** Quién puede insertar un mensaje en qué
-  conversación es decisión de ENG-56; acá solo se validó quién puede **leer**.
+  conversación es decisión de ENG-70; acá solo se validó quién puede **leer**.
 
-## Recomendaciones para ENG-56
+## Recomendaciones para ENG-70
+
+ENG-70 (*enviar y recibir mensajes fuera de la consulta*, Sprint 8) es quien
+implementa el chat. Del mismo mecanismo cuelgan **ENG-71** (push por mensajes
+nuevos) y **ENG-102** (archivos en el chat), así que lo que se decida acá los
+condiciona a los tres.
 
 1. **Traer el historial por HTTP después de suscribirse, y reconciliar por `id`.**
    Es la consecuencia directa del hallazgo: hubo una entrega perdida en 6 corridas
