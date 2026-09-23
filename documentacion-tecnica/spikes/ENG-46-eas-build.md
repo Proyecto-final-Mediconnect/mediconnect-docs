@@ -15,10 +15,11 @@ Este documento responde los tres criterios de aceptación de la issue:
 2. Documentar el proceso y las variables de entorno necesarias.
 3. Identificar los tiempos de espera reales en la cola de EAS Free.
 
-> **Estado: parcial.** Los criterios 1 y 3 requieren una cuenta de Expo y builds
-> reales, que al momento de escribir esto no existen (ver §5). Este documento
-> cierra el criterio 2 y deja los otros dos listos para ejecutar, con los pasos
-> exactos y los valores esperados contra los que comparar.
+> **Estado: completo** (23/09/2026). Los criterios 1 y 3 quedaron abiertos en la
+> primera versión de este documento por falta de cuenta de Expo, y se cerraron
+> en ENG-112 con un build real. Los resultados medidos están en el **§8**. Las
+> secciones 1 a 7 se conservan como estaban para dejar registro del razonamiento
+> previo, y donde la realidad las contradijo lo aclara el §8.2.
 
 ---
 
@@ -163,14 +164,16 @@ concurrencia adicional a USD 50 por cada una.
 - **Concurrencia 1** significa que si dos personas disparan builds, el segundo
   espera al primero además de la cola.
 
-> **Pendiente de medición (criterio de aceptación 3):** los "90+ minutos" son el
-> valor que declara Expo, no una medición nuestra. Al correr los primeros builds
-> hay que registrar el tiempo real de cola y compilación, y actualizar esta
-> sección con esos números.
+> **Medido (criterio de aceptación 3):** el primer build real esperó **75 minutos
+> en cola** y compiló en **6**. El detalle está en el §8.1.
 
 ---
 
-## 5. Bloqueo actual: no hay cuenta de Expo
+## 5. Bloqueo original: no había cuenta de Expo
+
+> **Resuelto en ENG-112.** Se usa la cuenta del equipo `mediconnecttesis` y el
+> proyecto es `@mediconnecttesis/mediconnect-mobile`. Las decisiones de abajo
+> quedan como registro.
 
 `eas whoami` devuelve `Not logged in`, y el `projectId` sigue en su valor
 placeholder. **Sin una cuenta de Expo no se puede ejecutar `eas build:configure`
@@ -232,6 +235,112 @@ de 15 builds mensuales.
 5. **ENG-99 (Sentry en mobile) queda destrabada** en cuanto exista un build de
    desarrollo funcionando, que es lo que necesita para capturar crashes nativos:
    Expo Go no alcanza.
+
+---
+
+## 8. Resultados reales (ENG-112, 23/09/2026)
+
+### 8.1 Primer build de desarrollo para Android
+
+| Dato | Valor |
+| --- | --- |
+| Build | [`9b143ec6`](https://expo.dev/accounts/mediconnecttesis/projects/mediconnect-mobile/builds/9b143ec6-dda2-4161-9d32-e7d1cbbb7423) |
+| Perfil | `development` |
+| Commit | `68d5858` (rama `feature/ENG-112-inicializar-eas-primer-build-android`) |
+| SDK de Expo | 56 |
+| `versionCode` | 1 (inicializado por EAS: `appVersionSource: "remote"`) |
+| Prioridad asignada | `NORMAL_PLUS` |
+| **Espera en cola** | **75 min 24 s** |
+| **Compilación** | **6 min 19 s** |
+| **Total** | **~82 min** |
+| Artefacto | `.apk` de 161 MB |
+| Vencimiento del link | 07/10/2026 (**14 días** después del build) |
+
+Los tiempos salen de las métricas que devuelve `eas build:view <id> --json`
+(`buildQueueTime`, `buildDuration`), no de un cronómetro manual.
+
+**Es una sola medición**, un día hábil al mediodía. La cola depende de la demanda
+global de EAS, así que tomarlo como orden de magnitud, no como número fijo. Lo que
+sí confirma es la conclusión del §4.1: **casi todo el tiempo es cola, no
+compilación**.
+
+Qué implica en concreto:
+
+- **EAS Build no va en el CI de cada PR.** Una hora y cuarto de cola por PR es
+  inviable, tal como anticipaba el §6.
+- **El APK de la defensa (ENG-119) necesita margen.** Hay que dispararlo por lo
+  menos un día antes: un build que falla al final de 80 minutos obliga a volver a
+  hacer toda la cola.
+- **El link del artefacto vence a los 14 días.** Un APK generado con semanas de
+  anticipación ya no se puede bajar desde EAS el día de la defensa. O se genera
+  cerca de la fecha, o se guarda el `.apk` en un lugar propio.
+
+### 8.2 Contra lo que anticipaba este documento
+
+| Sección | Qué decía | Qué pasó |
+| --- | --- | --- |
+| §1.1 | Faltaba `expo-dev-client` y había que instalarlo antes del primer build | ✅ **Correcto.** Se instaló `expo-dev-client ~56.0.27`. |
+| §2.1 | `eas build:configure` reemplaza el placeholder del `projectId` | ❌ Con `"TODO-set-on-eas-init"` presente, EAS lo toma como el ID de un proyecto que ya existe. Hubo que **borrar el placeholder** y correr `eas init`, que crea el proyecto y escribe el ID real. |
+| §2.2 | El primer build tiene que correrse de forma interactiva para crear las credenciales | ❌ **No hizo falta.** Con `--non-interactive`, EAS generó el keystore de Android en la nube, sin necesidad de `keytool` local, e inicializó el `versionCode` solo. |
+| §1 | `eas-cli 21.7.1` | Hoy es `24.7.0`, y `eas login` abre el navegador por defecto. Por eso funciona con cuentas de Expo creadas con Google, que no tienen contraseña para tipear en la terminal. |
+
+Además, `expo-doctor` encontró dos cosas que el spike no cubría:
+
+- **Dos parches desfasados** respecto del SDK instalado (`expo` 56.0.12 → 56.0.22,
+  `expo-notifications` 56.0.18 → 56.0.25). Se alinearon antes del build.
+- **Una regresión de memoria conocida en Hermes V1** que afecta a `expo@56`. El
+  arreglo es subir a **SDK 57**, un upgrade mayor que queda para un ticket aparte.
+  No bloquea el build de desarrollo, pero conviene resolverlo antes del APK de la
+  defensa.
+
+### 8.3 Entorno de prueba
+
+Ningún integrante del equipo tiene Android, y el build es un `.apk`: no se instala
+en iPhone (ver §3.2). La prueba se hace en el **emulador oficial de Android
+Studio**, que es además el que prevé el Sprint 0 §4.2.3 para el testing manual:
+
+| Parámetro | Valor | Por qué |
+| --- | --- | --- |
+| Dispositivo | Pixel, no Pro | Pantalla de tamaño medio: más liviana de emular y más parecida a los celulares de los pacientes. |
+| Imagen | **API 36** (Android 16), x86_64, con Google Play | Coincide con el `targetSdk = 36` del proyecto. Los comportamientos que dependen del `targetSdk`, como el borde a borde obligatorio, solo se ven en esa versión. |
+| Aceleración | WHPX (Plataforma del hipervisor de Windows) | Con Docker Desktop o WSL2 instalados, Hyper-V ya está activo y el driver que Android Studio ofrece por defecto no funciona. |
+
+La imagen *16 KB Page Size* no hace falta: sirve para validar librerías nativas
+contra el requisito de Google Play, y el proyecto no publica en Play.
+
+### 8.4 Instalación y primera apertura
+
+El APK se instaló en el emulador con `adb install` y quedó como
+`ar.mediconnect.app` (`versionCode` 1, `minSdk` 24, `targetSdk` 36). Con Metro
+corriendo, la app abre y muestra la `HomeScreen` de `main`, con el botón flotante
+del menú de desarrollo: es el dev client y no Expo Go. La captura está adjunta en
+ENG-112.
+
+Para levantarlo en el día a día:
+
+```sh
+npx expo start --dev-client   # esperar a que Metro diga que está listo
+adb reverse tcp:8081 tcp:8081 # recién ahora
+```
+
+y abrir la app desde el emulador. **El orden importa**, y costó dos intentos
+fallidos descubrirlo:
+
+- **Abrir la app antes de que Metro termine de arrancar** da `unexpected end of
+  stream`: el túnel existe, pero del otro lado todavía no escucha nadie.
+- **Crear el `adb reverse` antes de arrancar Metro** da `ECONNREFUSED`: al iniciar,
+  Expo reinicia el servidor de `adb`, y eso borra los túneles existentes sin avisar.
+  `adb reverse --list` vacío lo confirma.
+
+La alternativa sin pasos manuales es apretar `a` en la terminal de Metro: Expo
+arma el túnel y abre la app en el emulador solo.
+
+> **Este build ya tiene fecha de vencimiento práctica.** Se compiló sobre SDK 56.
+> El upgrade a SDK 57 (mobile#5) y el shell de navegación (mobile#6, ENG-113)
+> agregan módulos nativos (`react-native-screens`,
+> `react-native-safe-area-context`, `expo-font`) que este binario no incluye. Apenas
+> se mergeen hace falta un build nuevo, que es el que va a usar el equipo para
+> desarrollar.
 
 ---
 
