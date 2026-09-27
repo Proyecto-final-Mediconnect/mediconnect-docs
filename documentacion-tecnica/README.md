@@ -13,7 +13,14 @@ poder revisarlo vía Pull Request.
 
 ```
 documentacion-tecnica/
-└── spikes/     # conclusiones de tareas de investigación timeboxed (issues tipo Spike)
+├── spikes/     # conclusiones de tareas de investigación timeboxed (issues tipo Spike)
+└── testing/    # procedimientos de verificación que se corren en cada historia
 ```
 
 Cada spike se nombra con el ID de su issue en Linear: `ENG-XX-<tema>.md`.
+
+`testing/` es lo que se ejecuta, no lo que se investigó:
+
+- [Checklist de testing manual en emulador Android](testing/checklist-emulador-android.md)
+  (ENG-121) — obligatorio en toda historia de `mediconnect-mobile` mientras Detox no
+  exista (Sprint 0 §4.2.3).
