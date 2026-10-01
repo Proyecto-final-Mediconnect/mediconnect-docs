@@ -55,7 +55,10 @@ La distribución es interna:
 
 **Solo Android.** Un build de iOS instalable exige cuenta de Apple Developer paga
 incluso para distribución interna —ad-hoc o TestFlight—, así que sin ese gasto no hay
-forma de poner la app en un iPhone. Los tres perfiles ya existen en `eas.json`; esto
+build propio que se instale en un iPhone. Queda Expo Go (está en la App Store y no
+pide cuenta paga), que corre la app en modo desarrollo mientras su versión del SDK
+coincida con la del proyecto: alcanza para mostrarla en un iPhone, no para
+distribuirla. Los tres perfiles ya existen en `eas.json`; esto
 no agrega configuración, define cuáles se usan.
 
 ## Por qué el stack sigue siendo la decisión correcta
@@ -96,8 +99,10 @@ Eran una consecuencia que el ADR listaba, y es esa la que se cae.
 
 ### Negativas, y hay que decirlas
 
-- **No hay app instalable en iOS.** No es "no está en la store": no hay forma de
-  ponerla en un iPhone.
+- **No hay build instalable en iOS.** No es "no está en la store": no hay APK
+  equivalente para iPhone. Se puede mostrar con Expo Go, pero eso depende de que
+  Expo Go soporte el SDK del proyecto el día de la defensa —solo soporta el último—,
+  así que no es un plan B confiable.
 - **La demo depende de un APK y de un Android.** Si la defensa se hace sin
   dispositivo ni emulador Android a mano, no hay app que mostrar. Conviene tener el
   APK descargado de antemano y no depender del link de EAS en el momento.
