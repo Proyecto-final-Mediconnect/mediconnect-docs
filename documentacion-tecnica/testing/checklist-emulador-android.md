@@ -42,8 +42,9 @@ Por qué ese par:
 - **Pixel 6** es el AVD que viene por defecto en Android Studio, así que nadie tiene
   que configurar nada raro, y tiene notch — que es donde aparecen los problemas de
   safe area que un emulador sin notch esconde.
-- **API 34** es lo que corre la mayoría de los teléfonos en uso, y trae el modelo de
-  permisos moderno (incluido el permiso de notificaciones, que desde API 33 se pide en
+- **API 34 es el piso**, no lo más nuevo: es una versión que la mayoría de los
+  teléfonos en uso ya alcanzó o superó, así que lo que anda ahí anda en casi todos.
+  Trae el modelo de permisos moderno (incluido el permiso de notificaciones, que desde API 33 se pide en
   runtime y antes no).
 
 > **Pendiente de confirmar:** el API mínimo que soporta Expo SDK 56. Cuando ENG-112
