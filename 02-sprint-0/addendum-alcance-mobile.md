@@ -29,15 +29,28 @@ sorpresa.
 | --- | --- | --- |
 | Shell y navegación | Navegación raíz, tema, layout base | ENG-113 |
 | Autenticación | Login con sesión persistida | ENG-114 |
-| Turnos | Ver los turnos propios | ENG-115 |
+| Turnos | Ver los turnos propios y cancelar uno futuro | ENG-115 |
+| Reserva | Buscar profesionales, ver su disponibilidad y reservar un turno (sin pago) | ENG-132, ENG-133 |
+| Videoconsulta | Entrar a la consulta propia desde el celular | ENG-131 |
 | Historia clínica | Lectura de la HC propia | ENG-116 |
 | MediPass | Ver el propio y generar el QR | ENG-117 |
 | Notificaciones push | EP-09 · en mobile hoy está ticketeado el push por mensajes nuevos | ENG-71 |
 | Build distribuible | El APK con el que se hace la demo | ENG-119 |
 
-**La reserva y la cancelación de turnos no están ticketeadas en mobile.** El paciente
-las hace por web. Si se quieren en la app, entran como historias nuevas — no están
-cubiertas por este acuerdo.
+> **Ampliación propuesta el 01/10/2026, a confirmar por el equipo.** El acuerdo del
+> 15/08 dejaba la reserva y la cancelación de turnos en la web. Se suman a la app,
+> junto con entrar a la videoconsulta, porque son lo que el paciente hace con el
+> celular en la mano: sacar un turno, cancelarlo si no puede ir y atenderse donde
+> esté. Siguen siendo **solo del rol paciente** y no agregan trabajo de backend: los
+> endpoints son los mismos que usa la web (catálogo, disponibilidad, reserva,
+> cancelación y videoconsulta).
+>
+> - La **cancelación** ya está hecha dentro de ENG-115.
+> - **Buscar y reservar** son ENG-132 y ENG-133. La reserva deja el turno sin pagar:
+>   el pago con MercadoPago (ENG-63) sigue en la web hasta que haya una historia
+>   mobile para eso, y la app avisa que hay que pagar antes de que ENG-101 libere el
+>   turno.
+> - **Entrar a la videoconsulta** es ENG-131.
 
 > **Punto abierto: ENG-118.** "Escanear un MediPass como consultante externo desde la
 > app mobile" es la única historia mobile del backlog que **no es del rol paciente**:
@@ -48,6 +61,11 @@ cubiertas por este acuerdo.
 
 ### Lo que queda explícitamente afuera
 
+- **El rol profesional entero.** Agenda, la videoconsulta del lado del profesional,
+  carga de historia clínica y cobros son web. No hay pantalla mobile para
+  profesionales, y no la va a haber en este proyecto.
+- **El rol moderador**, que tampoco tiene pantalla en web (ver el procedimiento manual
+  de validación de matrículas, ENG-109).
 - **El rol profesional entero.** Agenda, videoconsulta, carga de historia clínica y
   cobros son web. No hay pantalla mobile para profesionales, y no la va a haber en
   este proyecto.
@@ -166,24 +184,29 @@ funcionando. Lo que no hay es una app publicada en una tienda.
             Login, sesión persistente en secure storage, logout.
 
   1.3.13.5  Turnos del paciente
-            Listado de los turnos propios. La reserva y la cancelación
-            se hacen por web y no están en el alcance mobile.
+            Listado de los turnos propios y cancelación de un turno futuro.
+            Búsqueda de profesionales, disponibilidad y reserva. El pago
+            se hace por web.
 
-  1.3.13.6  Historia clínica del paciente
+  1.3.13.6  Videoconsulta del paciente
+            Ingreso a la sala de la consulta propia.
+
+  1.3.13.7  Historia clínica del paciente
             Lectura de la HC propia.
 
-  1.3.13.7  MediPass
+  1.3.13.8  MediPass
             Visualización del MediPass propio y generación del código QR.
 
-  1.3.13.8  Notificaciones push
+  1.3.13.9  Notificaciones push
             Registro del dispositivo y recepción de notificaciones (EP-09).
 
-  1.3.13.9  Verificación manual en emulador
+  1.3.13.10 Verificación manual en emulador
             Ejecución del checklist de testing manual en emulador Android
             por cada historia mobile.
 
 Exclusiones explícitas de este paquete:
   - Pantallas del rol profesional y del rol moderador.
+  - Pago de turnos (se hace por web).
   - Publicación en App Store y Google Play (ADR-017).
   - Build instalable de iOS.
   - Suite E2E automatizada con Detox: la tarea queda en el backlog.

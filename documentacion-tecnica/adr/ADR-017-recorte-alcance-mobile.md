@@ -25,7 +25,10 @@ y listó como primera consecuencia positiva:
 
 La Planning del 15/08/2026 acordó recortar el alcance mobile: **la app cubre
 únicamente el rol paciente —turnos, historia clínica, MediPass y push— y no se
-publica en App Store ni en Google Play.**
+publica en App Store ni en Google Play.** El 01/10/2026 se propuso sumar, dentro del
+mismo rol, la reserva y la cancelación de turnos y el ingreso a la videoconsulta (ver
+el [addendum](../../02-sprint-0/addendum-alcance-mobile.md)); no cambia nada de esta
+decisión, que es sobre distribución.
 
 Eso deja a ADR-003 con la premisa caída. La decisión de stack puede seguir siendo la
 correcta, pero eso hay que argumentarlo y no darlo por hecho: un ADR cuyo contexto ya
