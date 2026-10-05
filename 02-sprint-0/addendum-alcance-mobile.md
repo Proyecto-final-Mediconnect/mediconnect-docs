@@ -66,9 +66,18 @@ sorpresa.
   profesionales, y no la va a haber en este proyecto.
 - **El rol moderador**, que tampoco tiene pantalla en web (ver el procedimiento manual
   de validación de matrículas, ENG-109).
+- **El rol profesional entero.** Agenda, videoconsulta, carga de historia clínica y
+  cobros son web. No hay pantalla mobile para profesionales, y no la va a haber en
+  este proyecto.
+- **El rol moderador.** La validación de matrículas no tiene pantalla en web: es un
+  procedimiento manual (ENG-109). La única pantalla de moderador en web es la de
+  reseñas (ENG-81), y tampoco va a mobile.
 - **La publicación en App Store y Google Play.** Ver ADR-017.
-- **iOS instalable.** No es solo la store: sin cuenta de Apple Developer paga no hay
-  forma de poner la app en un iPhone, ni siquiera para distribución interna.
+- **Build instalable de iOS.** No es solo la store: sin cuenta de Apple Developer paga
+  no hay build propio que se instale en un iPhone, ni siquiera para distribución
+  interna. Lo que sí funciona es **Expo Go** desde la App Store, que corre la app en
+  modo desarrollo mientras su versión del SDK coincida con la del proyecto — sirve
+  para mostrarla, no para entregarla.
 - **Detox (E2E mobile) no se implementa en este proyecto.** La historia existe
   (ENG-120) y **queda en el backlog**, sin sprint asignado: el Sprint 0 §4.2.3 ya
   preveía que durante los primeros cinco sprints el testing mobile fuera manual en
