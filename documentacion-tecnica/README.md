@@ -15,6 +15,8 @@ poder revisarlo vía Pull Request.
 documentacion-tecnica/
 ├── spikes/     # conclusiones de tareas de investigación timeboxed (issues tipo Spike)
 └── testing/    # procedimientos de verificación que se corren en cada historia
+├── adr/        # decisiones de arquitectura en formato MADR
+└── spikes/     # conclusiones de tareas de investigación timeboxed (issues tipo Spike)
 ```
 
 Cada spike se nombra con el ID de su issue en Linear: `ENG-XX-<tema>.md`.
@@ -24,3 +26,6 @@ Cada spike se nombra con el ID de su issue en Linear: `ENG-XX-<tema>.md`.
 - [Checklist de testing manual en emulador Android](testing/checklist-emulador-android.md)
   (ENG-121) — obligatorio en toda historia de `mediconnect-mobile` mientras Detox no
   exista (Sprint 0 §4.2.3).
+Cada ADR se nombra con su número: `ADR-NNN-<tema>.md`. Los ADR-001 a ADR-015 se
+tomaron en el Sprint 0 y todavía viven en el documento de Google; ver
+[`adr/README.md`](adr/README.md).
