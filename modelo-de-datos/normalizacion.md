@@ -4,6 +4,11 @@ El esquema relacional de MediConnect se diseñó en **Tercera Forma Normal (3FN)
 justifica el cumplimiento de cada forma normal con ejemplos del propio modelo y explica las
 denormalizaciones deliberadas (todas justificadas).
 
+> **Al día con `main` del 21/10/2026** (30 tablas, ENG-158). Se revisaron las tablas que entraron
+> después del diseño original: ninguna rompe la 3FN, y una —`chain_head_snapshots`— es una
+> denormalización deliberada que se suma a la tabla del final. También se corrigió la afirmación
+> sobre el append-only: lo hacen **triggers**, no políticas de RLS.
+
 ## Primera Forma Normal (1FN)
 
 > Todos los atributos son atómicos; no hay grupos repetitivos ni columnas multivaluadas.
@@ -48,6 +53,18 @@ denormalizaciones deliberadas (todas justificadas).
 - **Datos de pago.** El estado del pago (`payments.status`) y el del turno
   (`appointments.status`) se mantienen en tablas distintas: el turno no deriva su estado del pago
   por columna, sino por lógica de negocio. Se evita duplicar el estado del pago dentro del turno.
+- **Contexto de la aceptación legal.** `legal_acceptances.ip` y `.user_agent` **no** son datos del
+  perfil sino del *evento* de aceptación: describen desde dónde se aceptó esa versión, en ese
+  momento. Guardarlos en `profiles` sería la dependencia transitiva —se sobrescribirían en la
+  siguiente aceptación y se perdería el contexto de la anterior—. Acá dependen de la clave de la
+  constancia, que es lo correcto.
+- **Recordatorios colgados del turno.** `notifications.appointment_id` y la
+  `UNIQUE (appointment_id, type, channel)` no denormalizan nada: el aviso es un hecho propio
+  (cuándo se mandó, por qué canal, si se leyó) y el turno es su referencia. La unique es el
+  mecanismo de idempotencia del job, no una copia de datos del turno.
+- **El código de MediPass.** `medipass_codes.code` es `UNIQUE` desde ENG-170. No es una decisión de
+  normalización sino de corrección: sin la restricción, dos pacientes podían tener el mismo código
+  vigente y el canje resolvía al paciente equivocado.
 
 ## Denormalizaciones deliberadas (justificadas)
 
@@ -59,17 +76,38 @@ razones de dominio y performance:
 | **Datos clínicos en `content` (JSONB)** | Se guarda el recurso FHIR R5 completo como documento, en lugar de descomponerlo en decenas de tablas relacionales | ADR-015: FHIR es el modelo estándar; descomponerlo perdería interoperabilidad y la capacidad de serializar el MediPass como Bundle. PostgreSQL permite consultas estructuradas sobre JSONB. |
 | **`previous_hash` en cada entrada de HC** | Se almacena el hash de la entrada anterior, dato "derivable" recorriendo la cadena | ADR-014: es el mecanismo de integridad. Recalcularlo en cada lectura sería O(N); persistirlo permite verificación incremental y es la evidencia legal de inmutabilidad. |
 | **`raw_payload` en `payment_webhook_events`** | Se guarda el JSON crudo del webhook además de los campos ya parseados | Trazabilidad y reproceso ante fallos; idempotencia. Es log, no fuente de verdad transaccional. |
+| **`chain_head_snapshots`** | Guarda `head_hash` y `sequence_number`, que son **derivables** recorriendo `clinical_record_entries` | ENG-123. Es el caso más claro de la tabla: el dato derivado no está para ahorrar un cálculo sino para poder comparar **contra el pasado**. Una cadena de hash no conoce su propia longitud, así que recalcular la cabeza hoy no dice nada sobre si ayer era más larga. Sin esta copia, borrar las últimas entradas de un paciente es indetectable: las que quedan siguen contiguas y enlazadas desde el génesis. |
 
 ## Integridad referencial
 
 - Toda relación se expresa con `FOREIGN KEY` a nivel base de datos (ADR-004).
 - `ON DELETE`:
   - `CASCADE` en dependencias de composición (perfil → patient/professional, conversación →
-    mensajes, profesional → agenda).
-  - `RESTRICT` (por defecto) en datos clínicos y catálogos: no se permite borrar una especialidad
-    en uso ni un paciente con HC.
-- `clinical_record_entries` y `audit_logs` son **append-only**: las políticas RLS niegan `UPDATE`
-  y `DELETE`, garantizando inmutabilidad más allá de la integridad referencial.
+    mensajes, profesional → agenda, turno → recordatorios).
+  - `RESTRICT` en datos clínicos, catálogos y constancias: no se permite borrar una especialidad
+    en uso, un paciente con HC, ni un perfil con aceptaciones legales registradas.
+  - El `RESTRICT` de `legal_acceptances → profiles` es el único que bloquea el borrado de una
+    cuenta, y es deliberado: la constancia de consentimiento no puede desaparecer con la cuenta
+    que la otorgó. El conflicto con el derecho de supresión es la **decisión D1**, abierta.
+
+### Append-only: cuatro tablas, por trigger
+
+Cuatro tablas no admiten `UPDATE`, `DELETE` ni `TRUNCATE`: `clinical_record_entries`,
+`audit_logs`, `medipass_access_logs` y `legal_acceptances`.
+
+**Lo hacen triggers, no políticas de RLS.** La versión anterior de este documento afirmaba lo
+segundo y es importante corregirlo, porque son garantías de alcance distinto:
+
+- Una política de RLS decide si una fila es visible o escribible **para un rol**, y no se le
+  aplica al dueño de la tabla salvo con `FORCE`. No existe forma de expresar "insertar sí,
+  modificar nunca" con una política.
+- Los triggers `BEFORE UPDATE OR DELETE` y `BEFORE TRUNCATE` levantan `42501`
+  (`insufficient_privilege`) **sin importar quién lo intente**, incluido el dueño.
+- `TRUNCATE` necesita su propio trigger: no dispara los de `DELETE` ni lo frena RLS. Sin él, una
+  sola sentencia vaciaba la tabla con los triggers de mutación intactos (lo detectó ENG-126).
+
+El detalle, con los códigos de error de cada condición y hasta dónde llega la garantía, está en
+[`esquema.md`](./esquema.md#integridad-e-inmutabilidad-triggers-y-códigos-de-error).
 
 ## Resumen
 
@@ -78,4 +116,5 @@ razones de dominio y performance:
 | 1FN | ✅ | `professional_specialties`, `professional_education`, `schedule_rules` |
 | 2FN | ✅ | Tabla puente sin atributos no clave |
 | 3FN | ✅ | Separación por rol, catálogos, sin dependencias transitivas |
-| Denormalización controlada | ✅ justificada | FHIR JSONB, cadena de hash, webhook raw |
+| Denormalización controlada | ✅ justificada | FHIR JSONB, cadena de hash, webhook raw, ancla de cabeza |
+| Inmutabilidad | ✅ por trigger | 4 tablas append-only con `42501`; la cadena de hash detecta lo que el trigger no previene |

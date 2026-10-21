@@ -56,6 +56,9 @@ erDiagram
 
     %% ===== Plataforma y Auditoria (EP-10) =====
     profiles ||--o{ audit_logs : genera
+    profiles ||--o{ legal_acceptances : acepta
+    patients ||--o| chain_head_snapshots : ancla
+    appointments ||--o{ notifications : origina
 
     %% ================= ENTIDADES =================
     profiles {
@@ -240,6 +243,7 @@ erDiagram
     notifications {
         uuid id PK
         uuid user_id FK
+        uuid appointment_id FK
         notification_type type
         notification_channel channel
         jsonb payload
@@ -316,4 +320,20 @@ erDiagram
         integer inconsistencies_found
         jsonb details
         timestamptz run_at
+    }
+    legal_acceptances {
+        uuid id PK
+        uuid profile_id FK
+        varchar version
+        timestamptz accepted_at
+        legal_acceptance_source source
+        inet ip
+        varchar user_agent
+    }
+    chain_head_snapshots {
+        uuid patient_id PK, FK
+        char head_hash
+        bigint sequence_number
+        timestamptz first_seen_at
+        timestamptz updated_at
     }
