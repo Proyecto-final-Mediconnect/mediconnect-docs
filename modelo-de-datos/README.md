@@ -23,10 +23,16 @@ ADR-007 Auth+RLS, ADR-014 integridad de HC, ADR-015 interoperabilidad FHIR).
 3. **Datos clínicos como FHIR R5 en `JSONB`.** El campo `content` de las entradas de HC guarda
    recursos FHIR (Patient, Observation, Condition, MedicationStatement, AllergyIntolerance) con
    codificación ICD-10 / SNOMED CT / LOINC embebida. Ver ADR-015.
-4. **Historia clínica append-only con cadena de hash SHA-256.** Ver ADR-014 y sección
-   correspondiente en [`esquema.md`](./esquema.md#ep-06--historia-clínica).
-5. **RLS en toda tabla con datos clínicos o PII.** Política por defecto: *deny-all*; se habilita
-   acceso explícito por dueño/relación. Ver ADR-007.
+4. **Historia clínica append-only con cadena de hash SHA-256.** El append-only lo garantizan
+   **triggers** que levantan `42501`, no políticas de RLS —que no pueden expresar "insertar sí,
+   modificar nunca"—. Son cuatro las tablas append-only, no solo la HC. Ver ADR-014 y
+   [Integridad e inmutabilidad](./esquema.md#integridad-e-inmutabilidad-triggers-y-códigos-de-error).
+5. **RLS en toda tabla que se sirva al cliente con datos clínicos o PII.** Política por defecto:
+   *deny-all*; se habilita acceso explícito por dueño/relación. Ver ADR-007. El estado no es
+   uniforme: hay tablas con políticas, tablas con RLS y cero políticas (denegado por defecto) y
+   tablas que hoy solo están protegidas por **no tener ningún `GRANT`** —ver
+   [Estado real de RLS](./esquema.md#estado-real-de-rls-y-privilegios-por-tabla), que lista las 30
+   y en qué nivel está cada una.
 
 ## Convenciones de nombres
 
