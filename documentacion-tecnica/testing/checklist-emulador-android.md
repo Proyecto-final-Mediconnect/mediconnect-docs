@@ -92,9 +92,24 @@ Modo avión, o Extended controls → Cellular → Data status: `Denied`.
 
 ### 4. Sesión vencida
 
-Con la app abierta, invalidar la sesión del lado del servidor (cerrar sesión desde la
-web con el mismo usuario, o borrar el token del secure storage) y después tocar algo
-que pegue al backend.
+Con la app abierta, invalidar **la sesión de la app** del lado del servidor y después
+tocar algo que pegue al backend.
+
+**Cerrar sesión en la web no sirve para esto.** Las sesiones de la web y del celular
+son independientes a propósito: `POST /auth/logout` solo borra las cookies del
+navegador, y que salir en la compu te saque del celular sería un error, no una
+garantía. Lo que sí corta todas las sesiones de un usuario es **cambiar la
+contraseña** (ENG-142 hace `signOut({ scope: 'global' })`). Por eso:
+
+1. Usar una cuenta de prueba **cuya casilla sea de alguien del equipo**: el enlace de
+   recuperación tiene que llegar a algún lado. Las `@mediconnect.test` del seed de
+   demo no sirven.
+2. Con la app abierta en esa cuenta, pedir "Olvidé mi contraseña" desde la web y
+   elegir una nueva.
+3. Volver a la app y tocar algo que pegue al backend.
+
+Borrar el token del secure storage tampoco es un camino: en un build de release
+(`preview`, `production`) no hay acceso al almacenamiento de la app.
 
 - [ ] Manda al login, no a una pantalla de error genérica.
 - [ ] Dice que la sesión venció, así el usuario entiende por qué volvió al login.
