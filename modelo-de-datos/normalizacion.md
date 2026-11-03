@@ -88,7 +88,8 @@ razones de dominio y performance:
     en uso, un paciente con HC, ni un perfil con aceptaciones legales registradas.
   - El `RESTRICT` de `legal_acceptances → profiles` es el único que bloquea el borrado de una
     cuenta, y es deliberado: la constancia de consentimiento no puede desaparecer con la cuenta
-    que la otorgó. El conflicto con el derecho de supresión es la **decisión D1**, abierta.
+    que la otorgó. El conflicto con el derecho de supresión era la **decisión D1**, resuelta en
+    ENG-86: la baja anonimiza el perfil (`deleted_at`) en lugar de borrar la fila.
 
 ### Append-only: cuatro tablas, por trigger
 
