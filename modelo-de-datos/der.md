@@ -6,6 +6,10 @@ Diagrama completo del esquema `public` sobre PostgreSQL (Supabase). La identidad
 > Fuente canónica: [`../diagrams/der.mmd`](../diagrams/der.mmd). Este archivo la embebe para
 > render directo en GitHub/Confluence. Especificación columna por columna en
 > [`esquema.md`](./esquema.md).
+>
+> **Al día con `main` del 21/10/2026: 30 tablas** (ENG-158). Para comprobar que sigue sincronizado,
+> `grep -c '^model ' mediconnect-backend/prisma/schema.prisma` tiene que coincidir con la cantidad
+> de entidades del diagrama.
 
 ## Leyenda de cardinalidad (notación Mermaid)
 
@@ -76,6 +80,9 @@ erDiagram
 
     %% ===== Plataforma y Auditoria (EP-10) =====
     profiles ||--o{ audit_logs : genera
+    profiles ||--o{ legal_acceptances : acepta
+    patients ||--o| chain_head_snapshots : ancla
+    appointments ||--o{ notifications : origina
 
     %% ================= ENTIDADES =================
     profiles {
@@ -260,6 +267,7 @@ erDiagram
     notifications {
         uuid id PK
         uuid user_id FK
+        uuid appointment_id FK
         notification_type type
         notification_channel channel
         jsonb payload
@@ -337,6 +345,22 @@ erDiagram
         jsonb details
         timestamptz run_at
     }
+    legal_acceptances {
+        uuid id PK
+        uuid profile_id FK
+        varchar version
+        timestamptz accepted_at
+        legal_acceptance_source source
+        inet ip
+        varchar user_agent
+    }
+    chain_head_snapshots {
+        uuid patient_id PK, FK
+        char head_hash
+        bigint sequence_number
+        timestamptz first_seen_at
+        timestamptz updated_at
+    }
 ```
 
 ## Notas del diagrama
@@ -348,5 +372,16 @@ erDiagram
   `consultant_name` / `consultant_license`. Por eso no se dibuja arista (evita ruido visual).
 - **`integrity_checks`** no tiene relaciones: es una tabla de bitácora del job de verificación de
   la cadena de hash (ADR-014, TT-03 / ENG-85).
+- **`chain_head_snapshots`** sí la tiene, y es 1:0..1 con `patients`: una fila por paciente con la
+  cabeza de su cadena al cierre de la última corrida sana del job. Existe porque una cadena de hash
+  no conoce su propia longitud, así que sin este ancla el borrado de las últimas entradas de un
+  paciente pasa invisible (ENG-123; ver el spike ENG-45).
+- **`legal_acceptances`** cuelga de `profiles` con `ON DELETE RESTRICT`, y es la única FK a
+  `profiles` que no cascadea: borrar la cuenta no puede borrar la constancia de que esa persona
+  aceptó el tratamiento de sus datos de salud. El conflicto con el derecho de supresión es la
+  decisión **D1**, todavía abierta.
+- **`notifications.appointment_id`** es FK opcional a `appointments`: los recordatorios cuelgan del
+  turno, y la `UNIQUE (appointment_id, type, channel)` es lo que hace idempotente al job que los
+  manda (ENG-68). Los avisos que no son de un turno la tienen en `null`.
 - **Auto-referencia `clinical_record_entries.corrects_entry_id`**: una entrada de tipo
   `CORRECCION` referencia a la entrada original que corrige, sin modificarla (append-only).
