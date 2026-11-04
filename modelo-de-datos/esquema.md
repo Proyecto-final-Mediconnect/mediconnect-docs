@@ -7,7 +7,7 @@ Ver el diagrama en [`der.md`](./der.md) y la justificación de normalización en
 Convenciones: PK `id UUID DEFAULT gen_random_uuid()` salvo indicación; `created_at TIMESTAMPTZ
 DEFAULT now()`.
 
-> **Estado: al día con `main` del 21/10/2026** (30 tablas, 12 enums, 26 migraciones aplicadas).
+> **Estado: al día con `main` del 04/11/2026** (32 tablas, 13 enums, 42 migraciones aplicadas).
 >
 > Este documento se escribió en ENG-89 como **diseño**, antes de implementar, y hasta ENG-158 se
 > había tocado por última vez el 27/07. En el medio entraron 20 migraciones. ENG-158 lo pasó de
@@ -47,9 +47,10 @@ DEFAULT now()`.
 | `entry_type` | `CONSULTA`, `DIAGNOSTICO`, `PRESCRIPCION`, `ESTUDIO`, `CORRECCION` |
 | `summary_status` | `PENDIENTE_VALIDACION`, `VALIDADO`, `DESCARTADO` |
 | `review_status` | `PENDIENTE_MODERACION`, `APROBADA`, `RECHAZADA` |
-| `notification_type` | `TURNO_RESERVADO`, `RECORDATORIO_24H`, `RECORDATORIO_1H`, `NUEVO_MENSAJE`, `PAGO_CONFIRMADO`, `RESENA_MODERADA` |
+| `notification_type` | `TURNO_RESERVADO`, `RECORDATORIO_24H`, `RECORDATORIO_1H`, `NUEVO_MENSAJE`, `PAGO_CONFIRMADO`, `RESENA_MODERADA`, `TURNO_CANCELADO`, `TURNO_REPROGRAMADO`, `MEDIPASS_ACCESO` |
 | `notification_channel` | `IN_APP`, `PUSH`, `EMAIL` |
 | `legal_acceptance_source` | `REGISTER`, `REACCEPT` — por dónde se aceptaron los textos legales (ENG-140) |
+| `patient_document_type` | `ESTUDIO`, `EPICRISIS`, `INFORME`, `RECETA`, `OTRO` — documentación previa que aporta el paciente (ENG-164) |
 
 Extensiones requeridas: `pgcrypto` (hash/uuid), `citext` (email case-insensitive), `pg_trgm`
 (búsqueda fuzzy en catálogo).
@@ -67,9 +68,24 @@ Perfil base 1:1 con `auth.users` de Supabase. Portador del rol.
 | `email` | citext | UK, NOT NULL | Espejo de `auth.users.email` |
 | `role` | user_role | NOT NULL | Define de qué tabla especializada cuelga |
 | `mfa_enabled` | boolean | NOT NULL, DEFAULT false | MFA TOTP (Supabase) |
+| `deleted_at` | timestamptz | nullable | Marca la baja de la cuenta (ENG-86) |
+| `email_reminders` | boolean | NOT NULL, DEFAULT `true` | Oposición del art. 27 (ENG-86) |
 | `created_at` / `updated_at` | timestamptz | NOT NULL | |
 
+`deleted_at` marca la baja y **la fila no se borra**: se anonimiza. Ver
+[Baja de cuenta](#baja-de-cuenta-la-fila-no-se-borra).
+
+`email_reminders` apaga los recordatorios por email. La confirmación del turno sigue saliendo,
+porque es parte del servicio contratado y no publicidad.
+
 **RLS:** cada usuario lee/actualiza solo su propia fila (`id = auth.uid()`).
+
+> **Dos columnas de `profiles` que agregó ENG-86 (derechos ARCO):**
+>
+> | Columna | Tipo | Notas |
+> |---------|------|-------|
+> | `deleted_at` | timestamptz, nullable | Marca la baja de la cuenta. **La fila no se borra**: se anonimiza. Ver [Baja de cuenta](#baja-de-cuenta-la-fila-no-se-borra) |
+> | `email_reminders` | boolean, DEFAULT `true` | Oposición del art. 27: apaga los recordatorios por email. La confirmación del turno sigue saliendo, porque es parte del servicio contratado |
 
 ### `patients`
 Perfil de paciente, 1:1 con `profiles` (cuando `role = PACIENTE`).
@@ -82,7 +98,21 @@ Perfil de paciente, 1:1 con `profiles` (cuando `role = PACIENTE`).
 | `dni` | varchar(15) | UK | Validado formato argentino en backend |
 | `phone` | text | | |
 | `address` | text | | |
+| `sex` | varchar(30) | nullable | Campos vitales del MediPass (ENG-134) |
+| `blood_type` | varchar(3) | nullable | `"0+"`, `"A-"`, … |
+| `allergies` | jsonb | nullable | `[{ que, gravedad }]` |
+| `medications` | jsonb | nullable | `[{ droga, dosis, nota? }]` |
+| `conditions` | jsonb | nullable | `[{ nombre, codigo }]` |
+| `emergency_contact` | jsonb | nullable | `{ nombre, vinculo, telefono }` |
+| `medipass_scope` | jsonb | nullable | Qué bloques ve un consultante externo (ENG-149) |
 | `created_at` / `updated_at` | timestamptz | | |
+
+Los seis campos vitales son `jsonb` y no tablas propias: es un **atajo consciente**, anotado como
+deuda en ENG-134. Normalizarlos sería lo correcto a largo plazo, pero son datos que se leen
+siempre juntos, en bloque, y que ningún flujo consulta de forma relacional.
+
+`medipass_scope` es la elección del paciente sobre qué partes del bloque vital ve quien escanea su
+MediPass. `null` significa el default, no "no ve nada".
 
 **RLS:** el propio paciente; y profesionales con relación vigente (vía `appointments`) en modo lectura.
 
@@ -123,6 +153,28 @@ porque RLS filtra filas y no columnas.
 
 El estado que habilita el perfil público es **`VALIDADO`**. La versión anterior de este documento
 decía `ACTIVO`, que no es un valor del enum.
+
+#### Baja de cuenta: la fila no se borra
+
+`profiles.deleted_at` (ENG-86) marca la baja, y es lo que resolvió la **decisión D1**.
+
+Borrar la fila no es posible ni correcto, por tres motivos distintos:
+
+- **La historia clínica se conserva 10 años** desde la última atención (Ley 26.529 art. 18),
+  aunque el paciente cierre la cuenta. Para que siga siendo la historia **de alguien**, se
+  conservan el nombre, el apellido, el DNI y la fecha de nacimiento del paciente; del profesional,
+  el nombre y la matrícula, que son la firma de las entradas que asentó.
+- **La constancia del consentimiento** (`legal_acceptances`) es la prueba de que esa persona
+  autorizó el tratamiento de sus datos de salud: append-only y con FK `RESTRICT` por lo mismo.
+- **Los pagos y reembolsos** son registros contables.
+
+Lo que sí se suprime: email, teléfono y domicilio, los datos de emergencia y el MediPass, las
+reseñas, los documentos aportados, los avisos, los dispositivos, y la agenda y el perfil público
+del profesional. El email pasa a `baja+<id>@mediconnect.invalid` (`.invalid` es un TLD reservado,
+RFC 2606) y el acceso se cierra en Supabase Auth.
+
+**La pantalla se lo dice al usuario**, con las dos listas enfrentadas, porque el art. 16 de la
+Ley 25.326 le da derecho a saber qué se conserva y por qué.
 
 ### `legal_acceptances`
 Constancia de que un perfil aceptó los términos, la política de privacidad y el consentimiento de
@@ -286,7 +338,16 @@ Turno reservado. La relación profesional↔paciente se deriva de esta tabla.
 | `status` | appointment_status | DEFAULT `RESERVADO_SIN_PAGAR` | |
 | `cancellation_reason` | text | | |
 | `cancelled_at` | timestamptz | | |
+| `rescheduled_at` | timestamptz | | Cuándo se movió de horario (ENG-66) |
+| `policy_hours_full_refund` | smallint | | Política **congelada** al reservar (ENG-66) |
+| `policy_hours_partial_refund` | smallint | | |
+| `policy_partial_refund_percent` | smallint | | |
 | `created_at` / `updated_at` | timestamptz | | |
+
+**Las tres columnas de política son una copia deliberada** de `cancellation_policies` al reservar,
+por el mismo motivo que `price`: el paciente aceptó unas condiciones, y que el profesional las
+cambie después no puede alterar retroactivamente lo que le corresponde si cancela. En `null`
+—turnos anteriores a ENG-66— se cae a la política vigente del profesional.
 
 Índice: `(professional_id, scheduled_at)` para evitar solapamientos y acelerar la agenda.
 
@@ -361,6 +422,7 @@ Reembolsos (1:N sobre un pago).
 | `amount` | numeric(10,2) | NOT NULL |
 | `status` | refund_status | DEFAULT `PENDIENTE` |
 | `reason` | text | |
+| `mercadopago_refund_id` | text | | Id del reembolso en MercadoPago (ENG-65); `null` mientras está pendiente |
 | `processed_at` / `created_at` | timestamptz | |
 
 ---
@@ -471,6 +533,42 @@ se puede auditar, no se entrega la HC (Ley 26.529, art. 15).
 > MediPass activas no revocadas", y eso no es lo que hace MediPass: expone el **bloque vital**
 > —datos de urgencia del perfil del paciente— y no la historia clínica. Ver EP-09.
 
+### `patient_documents`
+Documentación clínica previa que aporta el propio paciente: estudios, epicrisis,
+informes, recetas (ENG-164).
+
+| Columna | Tipo | Restricciones | Notas |
+|---------|------|---------------|-------|
+| `id` | uuid | PK | |
+| `patient_id` | uuid | FK → `patients.profile_id` ON DELETE RESTRICT | |
+| `type` | patient_document_type | NOT NULL | |
+| `title` | varchar(120) | NOT NULL | |
+| `document_date` | date | nullable | La fecha del estudio, no la de la carga |
+| `source_institution` | varchar(120) | nullable | |
+| `storage_path` | text | **UK** | Ruta en Supabase Storage |
+| `sha256` | char(64) | NOT NULL | Hash del archivo subido |
+| `mime_type` | varchar(40) | NOT NULL | |
+| `size_bytes` | integer | NOT NULL | |
+| `uploaded_at` | timestamptz | DEFAULT `now()` | |
+| `withdrawn_at` | timestamptz | nullable | El paciente lo retiró de la vista |
+
+Índice: `(patient_id, uploaded_at DESC)`.
+
+**No es una entrada de historia clínica, y la distinción es el punto.** Va
+**fuera de la cadena de hash** y se muestra marcado como no validado: lo aportó
+el paciente, no lo asentó un profesional. Meterlo en `clinical_record_entries`
+sería hacer pasar por registro clínico algo que nadie firmó — y la cadena de
+hash perdería su significado, porque dejaría de garantizar que cada entrada la
+escribió un profesional identificado.
+
+**Append-only con una excepción acotada.** El trigger deja marcar `withdrawn_at`
+**una sola vez** y nada más: el paciente puede retirar un documento de la vista,
+pero no puede borrarlo ni editar lo que ya aportó. Por eso la FK es `RESTRICT` y
+no `CASCADE`.
+
+**El archivo vive en Supabase Storage**, no en la base; acá está la referencia y
+el `sha256` para detectar si el binario cambió.
+
 ---
 
 ## EP-07 — Inteligencia Artificial Clínica
@@ -502,9 +600,15 @@ Hilo único por par paciente-profesional.
 | `id` | uuid | PK |
 | `patient_id` | uuid | FK → `patients.profile_id` |
 | `professional_id` | uuid | FK → `professionals.profile_id` |
+| `patient_hidden_at` | timestamptz | nullable |
+| `professional_hidden_at` | timestamptz | nullable |
 | `created_at` | timestamptz | |
 
 Restricción: `UNIQUE (patient_id, professional_id)`.
+
+Las dos columnas `*_hidden_at` (ENG-70) dejan que cada parte oculte la conversación de **su**
+lista sin borrarla ni afectar a la otra. Son dos columnas y no un booleano compartido justamente
+por eso: archivar es una decisión de cada uno, y un mensaje nuevo la vuelve a mostrar.
 
 ### `messages`
 Mensajes del chat (ADR-011, Supabase Realtime).
@@ -588,6 +692,12 @@ Sesión de acceso de un consultante (por defecto 30 min, revocable).
 | `revoked_at` | timestamptz | | Revocación por el paciente |
 | `revoked_by` | uuid | FK → `profiles.id` (nullable) | |
 | `started_at` | timestamptz | NOT NULL | |
+| `emergency_card_id` | uuid | FK → `medipass_emergency_cards.id` ON DELETE RESTRICT (nullable) | La tarjeta que la habilitó (ENG-176) |
+| `closed_at` | timestamptz | | La marca el job de expiración (ENG-104) |
+
+Restricción: `CHECK num_nonnulls(medipass_code_id, emergency_card_id) = 1` — **se entra por el
+código o por la tarjeta, nunca por las dos ni por ninguna**. Por eso `medipass_code_id` pasó a
+nullable con ENG-176.
 
 Sesión **activa** = `revoked_at IS NULL AND now() < expires_at`.
 
@@ -601,6 +711,53 @@ Auditoría de accesos dentro de una sesión MediPass.
 | `patient_id` | uuid | FK → `patients.profile_id` |
 | `resource_accessed` | text | Qué recurso se leyó |
 | `accessed_at` | timestamptz | |
+
+---
+
+### `medipass_emergency_cards`
+Tarjeta de emergencia: un QR **fijo** que el paciente imprime o lleva en la
+billetera (ENG-176).
+
+| Columna | Tipo | Restricciones | Notas |
+|---------|------|---------------|-------|
+| `id` | uuid | PK | |
+| `patient_id` | uuid | FK → `patients.profile_id` ON DELETE CASCADE | |
+| `token_hash` | char(64) | **UK**, CHECK `~ '^[0-9a-f]{64}$'` | SHA-256 del token en hex |
+| `created_at` | timestamptz | DEFAULT `now()` | |
+| `revoked_at` | timestamptz | nullable | |
+
+Restricciones e índices:
+
+- `UNIQUE (patient_id) WHERE revoked_at IS NULL` — **una sola tarjeta activa por
+  paciente**. Es un índice parcial, así que dos regeneraciones simultáneas no
+  pueden dejar dos QR válidos: la segunda choca y el backend contesta 409. Prisma
+  no modela índices parciales; se crea en la migración.
+- `(patient_id, created_at DESC)`.
+
+**Por qué existe.** El código rotativo solo se ve en la pantalla del paciente. Si
+llega inconsciente o sin el celular, nadie puede abrir su MediPass — justo el
+escenario que más sentido le da (Estudio Inicial §2.5).
+
+**Por qué el token es de 256 bits y no de 8 caracteres.** El código rotativo se
+defiende con la ventana de cinco minutos; la tarjeta **no vence sola**, así que
+su defensa tiene que ser el tamaño del espacio. Son 32 bytes de `randomBytes` en
+base64url, y por eso un SHA-256 sin sal alcanza: sobre 2²⁵⁶ no hay diccionario
+contra el cual probar, a diferencia de los 38 bits del código rotativo
+(ver [el spike ENG-105](../documentacion-tecnica/spikes/ENG-105-medipass-cripto.md)).
+
+**El CHECK sobre `token_hash` es defensa en profundidad**: si alguna vez se
+guardara el token en claro por error, la base lo rechaza por no tener forma de
+SHA-256 en hex.
+
+**Qué cambió en `medipass_sessions`.** Una sesión entra por el código **o** por
+la tarjeta, nunca por los dos: `medipass_code_id` pasó a nullable, se agregó
+`emergency_card_id` (FK `RESTRICT`), y un CHECK
+`num_nonnulls(medipass_code_id, emergency_card_id) = 1` lo garantiza. Regenerar
+la tarjeta revoca la anterior y corta los accesos abiertos con ella, sin tocar
+los que se abrieron con el código.
+
+**RLS:** habilitada sin políticas, con los privilegios revocados a `anon` y
+`authenticated`. Solo la toca el backend por Prisma.
 
 ---
 
@@ -788,7 +945,7 @@ la preimagen del hash.
 Las 30 tablas no están todas en el mismo estado, y la diferencia es intencional. El proyecto usa
 **cuatro niveles**, de más abierto a más cerrado.
 
-### Nivel 1 — RLS con políticas (10 tablas)
+### Nivel 1 — RLS con políticas (12 tablas)
 
 El cliente llega a la tabla por PostgREST con su JWT, y **la autoridad es RLS**.
 
@@ -804,6 +961,8 @@ El cliente llega a la tabla por PostgREST con su JWT, y **la autoridad es RLS**.
 | `appointments` | `SELECT, INSERT` | `appointments_select_own`, `appointments_insert_own_patient` |
 | `payments` | `SELECT` | `payments_select_own_patient` |
 | `clinical_record_entries` | `SELECT` | `_select_own_patient`, `_select_assigned_professional`, `_select_own_authored` |
+| `conversations` | `SELECT, UPDATE` | Las dos partes del hilo; el `UPDATE` solo para ocultarlo (ENG-70) |
+| `messages` | `SELECT, INSERT` | Las dos partes de la conversación (ENG-70) |
 
 **`FORCE ROW LEVEL SECURITY`** está solo en `profiles`, `patients`, `professionals` y
 `clinical_record_entries`. Sin `FORCE`, RLS no se le aplica al dueño de la tabla; con `FORCE`, sí.
@@ -811,14 +970,17 @@ Se usa donde el backend **no** necesita escribir por fuera de RLS. En `appointme
 no está, y es a propósito: el webhook de MercadoPago es público, no tiene JWT de nadie y escribe
 por Prisma como dueño.
 
-> El rol `postgres` tiene `BYPASSRLS`, así que Prisma sigue funcionando incluso sobre las tablas
-> con `FORCE`. Cuando entre ENG-138 —que pasa el backend a un rol de aplicación sin `BYPASSRLS`—
-> estas tablas van a necesitar `GRANT` explícitos o políticas propias para el rol nuevo.
+> El rol `postgres` tiene `BYPASSRLS`, así que Prisma funciona incluso sobre las tablas con
+> `FORCE`. Lo mismo vale para `mediconnect_backend`, el rol de ENG-138: **conserva `BYPASSRLS`
+> a propósito** (ver el nivel 5), así que estas tablas no necesitan `GRANT` ni políticas nuevas
+> todavía. Cuando entre la parte 2 de ENG-138 —que haga que RLS filtre cada consulta por el
+> usuario logueado— sí van a necesitarlos.
 
-### Nivel 2 — RLS habilitada sin ninguna política (8 tablas)
+### Nivel 2 — RLS habilitada sin ninguna política (14 tablas)
 
-`consultations`, `video_sessions`, `payment_webhook_events`, `medipass_codes`,
-`medipass_sessions`, `medipass_access_logs`, `audit_logs`, `legal_acceptances`.
+`audit_logs`, `chain_head_snapshots`, `consultations`, `integrity_checks`, `legal_acceptances`,
+`medipass_access_logs`, `medipass_codes`, `medipass_emergency_cards`, `medipass_sessions`,
+`notifications`, `patient_documents`, `payment_webhook_events`, `refunds`, `video_sessions`.
 
 RLS activa con cero políticas significa **denegado por defecto**: ningún `SELECT` de
 `authenticated` ni de `anon` devuelve una fila. Todo el acceso pasa por el backend, que entra como
@@ -831,11 +993,15 @@ viaja en el bundle de la web y no es un secreto**. Sin RLS, cualquiera con esa c
 La contracara es que, en estas tablas, el filtrado por dueño es responsabilidad del código y no de
 la base, y por eso cada consulta del backend lleva el `patient_id` explícito.
 
-### Nivel 3 — Sin RLS y sin `GRANT` (12 tablas)
+### Nivel 3 — Sin RLS y sin `GRANT` (6 tablas)
 
-`cancellation_policies`, `chain_head_snapshots`, `consultation_summaries`, `conversations`,
-`integrity_checks`, `messages`, `notifications`, `professional_education`, `push_tokens`,
-`refunds`, `review_responses`, `reviews`.
+`cancellation_policies`, `consultation_summaries`, `professional_education`, `push_tokens`,
+`review_responses`, `reviews`.
+
+> Eran 12 cuando se escribió ENG-158, el 21/10. Seis se movieron al estrenarse: el chat (ENG-70)
+> llevó `conversations` y `messages` al nivel 1, y `chain_head_snapshots`, `integrity_checks`,
+> `notifications` y `refunds` quedaron en el nivel 2. **La convención funcionó**: cada historia
+> cerró la tabla que empezó a usar.
 
 Estas tablas se crearon con el esquema inicial (EP-02 / EP-10) y todavía **no las estrena ninguna
 ruta**, o las usa solo el backend por Prisma. Hoy son inalcanzables por PostgREST, pero por una
@@ -856,9 +1022,52 @@ misma migración.
 ### Nivel 4 — Append-only por trigger (4 tablas)
 
 Las de la sección anterior: `clinical_record_entries`, `audit_logs`, `medipass_access_logs` y
-`legal_acceptances`. Es un nivel aparte y no una variante del 2, porque el trigger protege contra
+`legal_acceptances`. Con ENG-145 las dos bitácoras suman además un trigger que **les pone la hora
+del servidor**: append-only sin eso deja escribir hoy una entrada fechada el mes pasado, y una
+fila inmutable con fecha falsa no prueba nada.
+
+`patient_documents` es un caso intermedio: su trigger deja marcar `withdrawn_at` una sola vez y
+nada más. Es un nivel aparte y no una variante del 2, porque el trigger protege contra
 algo distinto: los niveles 1 a 3 deciden **quién** llega a la fila, el trigger decide **qué se le
 puede hacer** una vez que se llegó. Las cuatro están además en el nivel 1 o 2.
+
+### Nivel 5 — El rol de aplicación (ENG-138)
+
+Transversal a los cuatro niveles anteriores, y entró en backend#103.
+
+Hasta ENG-138 el backend se conectaba como **`postgres`**: superusuario y dueño de todas las
+tablas. Un dueño puede `ALTER TABLE ... DISABLE TRIGGER`, así que una inyección SQL o un bug en
+una consulta cruda podía apagar los triggers que hacen inalterable la historia clínica, la
+auditoría y la constancia de consentimiento, y después reescribirlas. **Toda la garantía dependía
+de que el código nunca se equivocara.**
+
+El rol **`mediconnect_backend`** no es dueño de nada: no puede hacer DDL, ni `TRUNCATE`, ni tocar
+un trigger.
+
+| | |
+|---|---|
+| Otorgado | `SELECT, INSERT, UPDATE, DELETE` sobre todas las tablas, `USAGE, SELECT` sobre las secuencias |
+| **Revocado** `UPDATE`/`DELETE`/`TRUNCATE` | `clinical_record_entries`, `audit_logs`, `medipass_access_logs`, `legal_acceptances`, `integrity_checks` |
+| **Revocado** `DELETE`/`TRUNCATE` | `patient_documents` — el `UPDATE` queda, porque el retiro se marca con `withdrawn_at` |
+| Tablas futuras | `alter default privileges` les da los mismos permisos de filas al crearse |
+
+Sobre las tablas append-only el permiso **falta antes de que el trigger tenga que actuar**: son
+dos capas distintas, y la de privilegios se aplica aunque alguien desactivara la otra.
+
+**Lo que este rol todavía NO hace.** Conserva `BYPASSRLS`, así que RLS sigue sin filtrarle las
+consultas. Que lo haga exige propagar la identidad del usuario a la base en cada transacción y
+escribir políticas por rol en cada tabla: es la **parte 2 de ENG-138**, un ticket mucho más
+grande. Conviene no confundir las dos cosas al contarlo: lo que hay hoy es *el backend no puede
+desarmar las protecciones*, no *la base filtra por usuario*.
+
+> **No se activa con el merge.** Hay que correr el script
+> (`prisma/sql/eng138-rol-backend.sql`) en Supabase, ponerle contraseña al rol y cambiar
+> `DATABASE_URL` en Render, siguiendo `docs/security/rol-backend.md`. Volver atrás es poner la
+> URL anterior.
+>
+> **Y hay una trampa para las migraciones futuras:** una tabla append-only nueva nace con
+> `UPDATE`/`DELETE` otorgados por el `alter default privileges`. Su migración tiene que
+> revocarlos explícitamente, igual que hizo ENG-138 con las seis de arriba.
 
 ### Cómo verificar esto contra la base
 
