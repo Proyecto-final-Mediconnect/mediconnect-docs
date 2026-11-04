@@ -80,13 +80,6 @@ porque es parte del servicio contratado y no publicidad.
 
 **RLS:** cada usuario lee/actualiza solo su propia fila (`id = auth.uid()`).
 
-> **Dos columnas de `profiles` que agregó ENG-86 (derechos ARCO):**
->
-> | Columna | Tipo | Notas |
-> |---------|------|-------|
-> | `deleted_at` | timestamptz, nullable | Marca la baja de la cuenta. **La fila no se borra**: se anonimiza. Ver [Baja de cuenta](#baja-de-cuenta-la-fila-no-se-borra) |
-> | `email_reminders` | boolean, DEFAULT `true` | Oposición del art. 27: apaga los recordatorios por email. La confirmación del turno sigue saliendo, porque es parte del servicio contratado |
-
 ### `patients`
 Perfil de paciente, 1:1 con `profiles` (cuando `role = PACIENTE`).
 
@@ -107,7 +100,7 @@ Perfil de paciente, 1:1 con `profiles` (cuando `role = PACIENTE`).
 | `medipass_scope` | jsonb | nullable | Qué bloques ve un consultante externo (ENG-149) |
 | `created_at` / `updated_at` | timestamptz | | |
 
-Los seis campos vitales son `jsonb` y no tablas propias: es un **atajo consciente**, anotado como
+Cuatro de los seis campos vitales (`allergies`, `medications`, `conditions`, `emergency_contact`) son `jsonb` y no tablas propias: es un **atajo consciente**, anotado como
 deuda en ENG-134. Normalizarlos sería lo correcto a largo plazo, pero son datos que se leen
 siempre juntos, en bloque, y que ningún flujo consulta de forma relacional.
 
@@ -942,8 +935,9 @@ la preimagen del hash.
 
 ## Estado real de RLS y privilegios por tabla
 
-Las 30 tablas no están todas en el mismo estado, y la diferencia es intencional. El proyecto usa
-**cuatro niveles**, de más abierto a más cerrado.
+Las 32 tablas no están todas en el mismo estado, y la diferencia es intencional. El proyecto usa
+**cinco niveles**, de más abierto a más cerrado; los niveles 4 y 5 son transversales a los
+anteriores.
 
 ### Nivel 1 — RLS con políticas (12 tablas)
 
@@ -1022,14 +1016,17 @@ misma migración.
 ### Nivel 4 — Append-only por trigger (4 tablas)
 
 Las de la sección anterior: `clinical_record_entries`, `audit_logs`, `medipass_access_logs` y
-`legal_acceptances`. Con ENG-145 las dos bitácoras suman además un trigger que **les pone la hora
-del servidor**: append-only sin eso deja escribir hoy una entrada fechada el mes pasado, y una
-fila inmutable con fecha falsa no prueba nada.
+`legal_acceptances`. Las cuatro están además en el nivel 1 o 2.
+
+Las dos bitácoras (`audit_logs` y `medipass_access_logs`) van a sumar además un trigger que **les
+pone la hora del servidor** (ENG-145). **Pendiente:** entra con backend#105, que todavía no está
+mergeado. Append-only sin eso deja escribir hoy una entrada fechada el mes pasado, y una fila
+inmutable con fecha falsa no prueba nada.
 
 `patient_documents` es un caso intermedio: su trigger deja marcar `withdrawn_at` una sola vez y
 nada más. Es un nivel aparte y no una variante del 2, porque el trigger protege contra
 algo distinto: los niveles 1 a 3 deciden **quién** llega a la fila, el trigger decide **qué se le
-puede hacer** una vez que se llegó. Las cuatro están además en el nivel 1 o 2.
+puede hacer** una vez que se llegó.
 
 ### Nivel 5 — El rol de aplicación (ENG-138)
 

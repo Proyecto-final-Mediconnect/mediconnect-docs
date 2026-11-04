@@ -108,8 +108,10 @@ Cuatro tablas no admiten `UPDATE`, `DELETE` ni `TRUNCATE`: `clinical_record_entr
 intermedio: solo admite marcar `withdrawn_at`, una vez.
 
 Desde ENG-138 hay además una **segunda capa de privilegios**: el rol `mediconnect_backend` tiene
-`UPDATE`/`DELETE` revocados sobre esas tablas, así que el permiso falta antes de que el trigger
-tenga que actuar.
+`UPDATE`/`DELETE` revocados sobre esas cuatro tablas, así que el permiso falta antes de que el
+trigger tenga que actuar. El mismo nivel suma `integrity_checks` (también con `UPDATE`/`DELETE`/
+`TRUNCATE` revocados, sin trigger) y `patient_documents` (solo `DELETE`/`TRUNCATE` revocados, porque
+su retiro se marca con `UPDATE`).
 
 **Lo hacen triggers, no políticas de RLS.** La versión anterior de este documento afirmaba lo
 segundo y es importante corregirlo, porque son garantías de alcance distinto:

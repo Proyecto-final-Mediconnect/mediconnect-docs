@@ -45,7 +45,7 @@ erDiagram
     %% ===== MediPass (EP-09) =====
     patients ||--o{ medipass_codes : genera
     patients ||--o{ medipass_sessions : autoriza
-    medipass_codes ||--o| medipass_sessions : habilita
+    medipass_codes |o--o{ medipass_sessions : habilita
     medipass_sessions ||--o{ medipass_access_logs : audita
 
     %% ===== Resenas (EP-02) =====
