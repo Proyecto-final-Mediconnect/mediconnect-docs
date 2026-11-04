@@ -7,7 +7,7 @@ Diagrama completo del esquema `public` sobre PostgreSQL (Supabase). La identidad
 > render directo en GitHub/Confluence. Especificación columna por columna en
 > [`esquema.md`](./esquema.md).
 >
-> **Al día con `main` del 21/10/2026: 30 tablas** (ENG-158). Para comprobar que sigue sincronizado,
+> **Al día con `main` del 04/11/2026: 32 tablas** (ENG-186). Para comprobar que sigue sincronizado,
 > `grep -c '^model ' mediconnect-backend/prisma/schema.prisma` tiene que coincidir con la cantidad
 > de entidades del diagrama.
 
@@ -82,6 +82,9 @@ erDiagram
     profiles ||--o{ audit_logs : genera
     profiles ||--o{ legal_acceptances : acepta
     patients ||--o| chain_head_snapshots : ancla
+    patients ||--o{ medipass_emergency_cards : imprime
+    medipass_emergency_cards ||--o{ medipass_sessions : habilita
+    patients ||--o{ patient_documents : aporta
     appointments ||--o{ notifications : origina
 
     %% ================= ENTIDADES =================
@@ -90,6 +93,8 @@ erDiagram
         citext email UK
         user_role role
         boolean mfa_enabled
+        timestamptz deleted_at
+        boolean email_reminders
         timestamptz created_at
         timestamptz updated_at
     }
@@ -294,6 +299,7 @@ erDiagram
         uuid id PK
         uuid patient_id FK
         uuid medipass_code_id FK
+        uuid emergency_card_id FK
         uuid consultant_profile_id FK
         text consultant_name
         varchar consultant_license
@@ -361,6 +367,27 @@ erDiagram
         timestamptz first_seen_at
         timestamptz updated_at
     }
+    medipass_emergency_cards {
+        uuid id PK
+        uuid patient_id FK
+        char token_hash UK
+        timestamptz created_at
+        timestamptz revoked_at
+    }
+    patient_documents {
+        uuid id PK
+        uuid patient_id FK
+        patient_document_type type
+        varchar title
+        date document_date
+        varchar source_institution
+        text storage_path UK
+        char sha256
+        varchar mime_type
+        integer size_bytes
+        timestamptz uploaded_at
+        timestamptz withdrawn_at
+    }
 ```
 
 ## Notas del diagrama
@@ -380,6 +407,13 @@ erDiagram
   `profiles` que no cascadea: borrar la cuenta no puede borrar la constancia de que esa persona
   aceptó el tratamiento de sus datos de salud. El conflicto con el derecho de supresión era la
   decisión **D1**, resuelta en ENG-86: la baja anonimiza el perfil y no borra la fila.
+- **`medipass_emergency_cards`** es la tarjeta impresa del paciente (ENG-176). Una sesión del
+  MediPass entra por el código **o** por la tarjeta, nunca por las dos: por eso
+  `medipass_sessions.medipass_code_id` pasó a opcional y un CHECK
+  `num_nonnulls(medipass_code_id, emergency_card_id) = 1` lo garantiza.
+- **`patient_documents`** son los estudios que aporta el propio paciente (ENG-164). **No cuelgan
+  de la cadena de hash**: no son entradas de HC, no las firmó un profesional, y se muestran
+  marcados como no validados.
 - **`notifications.appointment_id`** es FK opcional a `appointments`: los recordatorios cuelgan del
   turno, y la `UNIQUE (appointment_id, type, channel)` es lo que hace idempotente al job que los
   manda (ENG-68). Los avisos que no son de un turno la tienen en `null`.
