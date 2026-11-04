@@ -342,7 +342,7 @@ es que el mecanismo funciona en el escenario para el que existe.
 | 1 | `unique` sobre `medipass_codes.code` + reintento en la generación | **Alta** | backend, migración + service |
 | 2 | Límite global al canje, además del límite por IP | **Alta** | backend, `medipass-sessions.controller.ts` |
 | 3 | Corregir el comentario `/// Código rotatorio de un solo uso` del esquema | Media | backend, `schema.prisma` |
-| 4 | Ratificar D7 (multi-canje con sesiones independientes) en la próxima reunión | Media | equipo |
+| 4 | Ratificar D7 (multi-canje con sesiones independientes) en la próxima reunión | Media | equipo · ✅ ratificada, ver abajo (ENG-137) |
 | 5 | Alerta sobre la tasa de 404 del canje | Baja | infra |
 | 6 | Documentar los dos límites del hallazgo 3 en el guion de la defensa | Baja | docs |
 
@@ -350,6 +350,64 @@ Las dos primeras son tickets de backend y **no se hacen en este PR**, que es de
 documentación. Las de prioridad alta conviene que entren antes de la defensa: la
 1 porque el modo de falla es el peor posible, y la 2 porque es la única que un
 docente con conocimiento de seguridad va a buscar.
+
+## Decisiones posteriores al spike (04/11/2026)
+
+### D7 ratificada: el código no es de un solo uso (ENG-137)
+
+Se ratifica la recomendación 4: **un código vigente se puede canjear más de una
+vez durante sus cinco minutos, y cada canje abre su propia sesión de 30 minutos,
+revocable por separado.** Es lo que ya hacía `openSession` desde #68, y el
+comentario contradictorio del esquema (recomendación 3) ya se corrigió en ENG-170.
+
+Por qué, en una línea para la defensa: *un código de un solo uso deja afuera al
+médico que recarga la página o a la segunda persona de la guardia justo cuando
+el paciente no puede mostrar otro, y no compra seguridad real, porque cada canje
+queda registrado con nombre, le llega un aviso al paciente (ENG-177) y se puede
+cortar sin cortar a los demás (ENG-75).*
+
+`used_at` queda como lo que es: cuándo se usó el código por primera vez. No es
+una traba y no se elimina, porque es un dato útil del historial.
+
+### La tarjeta de emergencia (ENG-176)
+
+El límite 3 de "Lo que este diseño NO resuelve" tenía un caso más grave que la
+revocación: **si el paciente está inconsciente o sin el celular, nadie puede ver
+el código**, así que el MediPass no se puede abrir en el escenario para el que
+existe. El Estudio Inicial §2.5 lo prometía ("el profesional usa el QR físico").
+Se implementó la opción A de ENG-176: una **tarjeta de emergencia**, un QR fijo
+que el paciente imprime o guarda.
+
+El problema de seguridad es que la tarjeta **no vence sola**, así que todo lo que
+en el código rotativo resuelve la ventana de cinco minutos acá lo tiene que
+resolver otra cosa:
+
+| Amenaza | Código rotativo | Tarjeta de emergencia |
+|---|---|---|
+| Adivinarlo | 28^8 ≈ 3,8 × 10^11 y vence a los 5 min | **2^256** (32 bytes de `randomBytes`, 43 caracteres base64url). Con el techo global de 120 intentos por minuto, probar durante toda la edad del universo da una probabilidad de acertar del orden de 10^-59. |
+| Una copia de la base | El código está en claro, pero vence en 5 min | Se guarda **solo el SHA-256** del token. Con 256 bits de azar no hay diccionario: un hash rápido alcanza y no hace falta uno lento como el de una contraseña. |
+| Que quede en logs | El código va en la query (`?codigo=`) | El token va en el **fragmento** (`#tarjeta=`), que el navegador no manda a ningún servidor: no queda en los logs del hosting, de un proxy ni en el `Referer`. |
+| Que alguien la fotografíe | Sirve 5 minutos | Sirve **hasta que el paciente la regenere o la desactive**. Es el riesgo residual, y lo cubren las tres filas siguientes. |
+| Enterarse | Aviso por cada canje (ENG-177) | El mismo aviso, que dice **"con tu tarjeta de emergencia"**, y el historial marca el origen. |
+| Cortar | Revocar la sesión (ENG-75) | Regenerar o desactivar invalida la tarjeta **y corta en el acto los accesos abiertos con ella**. Los del código no se tocan. |
+| Dos tarjetas válidas a la vez | — | Índice único parcial: una sola activa por paciente. Dos regeneraciones simultáneas no dejan dos QR válidos. |
+
+Lo demás es idéntico al código, a propósito: el canje es la **misma ruta**
+(`POST /medipass/sessions` con `tarjeta` en vez de `codigo`), así que comparte el
+límite por IP y el techo global del hallazgo 2, la bitácora, el scope (ENG-149) y
+el 404 único que no distingue "nunca existió" de "se desactivó".
+
+**El token se muestra una sola vez**, al generarla. Para reimprimirla hay que
+generar otra, y eso invalida la anterior: es exactamente lo que tiene que pasar
+si la tarjeta se perdió.
+
+**Lo que la tarjeta no resuelve:** igual que con el código, quien la escanea no
+está autenticado y la matrícula es declarada. Y una tarjeta robada junto con la
+billetera sirve hasta que el paciente se entere. Lo mitiga que se entera en el
+primer uso, por el aviso.
+
+Implementación: backend#101, web#68, mobile#36. Migración
+`20261104120000_eng176_medipass_emergency_card`.
 
 ## Cómo verificar los números
 

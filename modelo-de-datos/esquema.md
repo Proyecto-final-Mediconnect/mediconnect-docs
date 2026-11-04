@@ -143,9 +143,11 @@ Restricciones: `UNIQUE (profile_id, version)` — una constancia por perfil y ve
 **Por qué `ON DELETE RESTRICT` y no `CASCADE`.** Es la única FK a `profiles` del esquema que no
 cascadea, y es a propósito: si al borrar una cuenta se borrara su constancia de consentimiento,
 desaparecería justo la prueba de que esa persona autorizó el tratamiento de sus datos de salud.
-Esto choca de frente con el derecho de supresión, y es la **decisión D1** del plan de cierre, que
-sigue abierta: hay que resolver cómo se borra una cuenta sin perder la constancia, probablemente
-anonimizando el perfil en lugar de borrar la fila.
+Esto choca de frente con el derecho de supresión, y era la **decisión D1** del plan de cierre.
+**Resuelta en ENG-86 (04/11/2026): la baja anonimiza el perfil en lugar de borrar la fila.** El
+email pasa a `baja+<id>@mediconnect.invalid`, `profiles.deleted_at` marca la baja y se suprime
+todo lo que la ley no obliga a conservar. La constancia, la HC (10 años, Ley 26.529 art. 18) y
+los pagos se quedan. El detalle está en `AccountDeletionService` (`mediconnect-backend`).
 
 **Append-only.** Trigger `legal_acceptances_no_mutation`, que levanta `42501` ante `UPDATE` o
 `DELETE`, y `legal_acceptances_no_truncate` ante `TRUNCATE`. Una constancia que se puede editar no

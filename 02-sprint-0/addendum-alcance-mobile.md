@@ -157,6 +157,33 @@ funcionando. Lo que no hay es una app publicada en una tienda.
 
 ---
 
+## 4. El paciente inconsciente: la tarjeta de emergencia (ENG-176)
+
+El Estudio Inicial §2.5 dice: *"Si el paciente está inconsciente, el
+profesional usa el QR físico o el chip NFC para acceder al nivel de
+emergencia."* El Sprint 0 cambió el diseño a un código que rota cada cinco
+minutos y que solo se ve en la pantalla del paciente, y dejó ese caso sin
+cubrir.
+
+**Decisión (04/11/2026): se implementa la opción A de ENG-176, la tarjeta de
+emergencia.** Es un QR fijo que el paciente genera desde la web o la app y que
+imprime o guarda. Abre lo mismo que el código: 30 minutos de información vital,
+con registro, aviso al paciente y el mismo rate limit. El paciente la puede
+regenerar, lo que invalida la anterior y corta a quien haya entrado con ella, o
+desactivar.
+
+Se descartaron las otras dos opciones del ticket:
+
+- **B, el QR en la pantalla de bloqueo:** depende del sistema operativo y no
+  cubre al paciente sin celular, que es la mitad del problema.
+- **C, dejarlo fuera de alcance:** era la respuesta a una pregunta segura de la
+  defensa, y la opción A entraba en el tiempo.
+
+**El chip NFC del Estudio Inicial queda fuera de alcance:** la tarjeta impresa
+cubre el mismo caso sin hardware adicional. El análisis de seguridad está en
+`documentacion-tecnica/spikes/ENG-105-medipass-cripto.md`, sección "Decisiones
+posteriores al spike".
+
 ## Anexo A — Texto para el Plan de Proyecto
 
 > Estas dos secciones hay que **pegarlas en el Plan de Proyecto del Drive**: son

@@ -378,8 +378,8 @@ erDiagram
   paciente pasa invisible (ENG-123; ver el spike ENG-45).
 - **`legal_acceptances`** cuelga de `profiles` con `ON DELETE RESTRICT`, y es la única FK a
   `profiles` que no cascadea: borrar la cuenta no puede borrar la constancia de que esa persona
-  aceptó el tratamiento de sus datos de salud. El conflicto con el derecho de supresión es la
-  decisión **D1**, todavía abierta.
+  aceptó el tratamiento de sus datos de salud. El conflicto con el derecho de supresión era la
+  decisión **D1**, resuelta en ENG-86: la baja anonimiza el perfil y no borra la fila.
 - **`notifications.appointment_id`** es FK opcional a `appointments`: los recordatorios cuelgan del
   turno, y la `UNIQUE (appointment_id, type, channel)` es lo que hace idempotente al job que los
   manda (ENG-68). Los avisos que no son de un turno la tienen en `null`.
