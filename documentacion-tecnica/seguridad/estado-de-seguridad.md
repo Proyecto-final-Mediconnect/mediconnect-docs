@@ -1,7 +1,7 @@
 # Estado de seguridad frente al Sprint 0
 
 - **Issue:** [ENG-167](https://linear.app/summercamp-pasantes/issue/ENG-167) · Backlog técnico transversal
-- **Fecha de corte:** 04/11/2026
+- **Fecha de corte:** 09/11/2026 (filas 16 y 18 actualizadas; el resto, verificado al 04/11)
 - **Contra qué se verificó:** `main` de cada repo — backend `ba8f345`, web `4cb648f`,
   mobile `069f4f2` — más los PRs mergeados, Linear y, donde se indica, el entorno de
   producción.
@@ -29,16 +29,16 @@ Abreviaturas de los enlaces: `backend#N`, `web#N` y `mobile#N` son PRs de cada r
 
 | Estado | Cantidad |
 |---|---|
-| Cumplido | 14 |
+| Cumplido | 15 |
 | Cumplido distinto | 7 |
 | Parcial | 6 |
-| Pendiente | 5 |
+| Pendiente | 4 |
 | Superado | 1 |
 | **Total de compromisos** | **33** |
 
 Los **pendientes** son: revisión de seguridad por dos developers (§4.8.2), checklist de
-cierre de release (§4.8.3), MFA TOTP (§5.5.2, en revisión), pre-commit hook con
-gitleaks (§5.5.5) y rotación semestral de secretos (§5.5.5).
+cierre de release (§4.8.3), pre-commit hook con gitleaks (§5.5.5) y rotación semestral
+de secretos (§5.5.5).
 
 Además hay controles que el Sprint 0 no pedía, o que dejaba fuera del MVP, y que
 están hechos: ver [Lo que va más allá del Sprint 0](#lo-que-va-más-allá-del-sprint-0).
@@ -89,9 +89,9 @@ están hechos: ver [Lo que va más allá del Sprint 0](#lo-que-va-más-allá-del
 | # | Compromiso | Estado | Evidencia | Justificación / qué falta |
 |---|---|---|---|---|
 | 15 | JWT con expiración de **15 minutos** y refresh token rotativo. | Cumplido distinto | [`jwt-auth.guard.ts`](https://github.com/Proyecto-final-Mediconnect/mediconnect-backend/blob/main/src/auth/guards/jwt-auth.guard.ts) · [spike ENG-40](../spikes/ENG-40-supabase-auth.md) · [`refresh-token-reuse-risk-plan.md`](https://github.com/Proyecto-final-Mediconnect/mediconnect-backend/blob/main/docs/security/refresh-token-reuse-risk-plan.md) | El access token dura **1 hora**: el default de Supabase, que nadie cambió. El refresh rota en cada uso, pero la detección de reuso de Supabase no funciona como dice su documentación (verificado dos veces). Ver [Sesión y JWT](#sesión-y-jwt). |
-| 16 | MFA TOTP opcional para todos, recomendado para profesionales. | Pendiente | [ENG-88](https://linear.app/summercamp-pasantes/issue/ENG-88) *In Review* · PRs abiertos backend#110, web#73, mobile#41 | Hoy existe la columna `profiles.mfa_enabled`, pero ningún flujo la usa. Cuando entren los tres PRs, pasa a Cumplido. |
+| 16 | MFA TOTP opcional para todos, recomendado para profesionales. | Cumplido | backend#110, web#73, mobile#41 ([ENG-88](https://linear.app/summercamp-pasantes/issue/ENG-88)) · migración `eng88_mfa_rls` · backend#112 (deploy) | TOTP opcional con MFA nativo de Supabase, para todos los roles. Con la MFA activa, el backend exige `aal2` y **también la base**: políticas RLS `RESTRICTIVE` (`mfa_ok()`) en 21 tablas, `storage.objects` y `realtime.messages`, así que con la contraseña sola no se lee nada directo de Supabase. Un trigger impide que el usuario apague `mfa_enabled` por PostgREST. Verificado en producción el 09/11. **Falta:** restablecer la contraseña con la MFA activa (hoy responde un error claro y deriva a soporte) y códigos de recuperación. |
 | 17 | Row Level Security activa en todas las tablas con datos clínicos. | Cumplido | Migración [`20260710000000_force_rls`](https://github.com/Proyecto-final-Mediconnect/mediconnect-backend/tree/main/prisma/migrations/20260710000000_force_rls) (`FORCE ROW LEVEL SECURITY`) + políticas por tabla en cada migración · backend#2 ([ENG-37](https://linear.app/summercamp-pasantes/issue/ENG-37)) | Protege lo que los clientes leen directo de Supabase (Realtime del chat, Storage, PostgREST). Lo que pasa por el backend **no** lo filtra RLS: ver fila 18. |
-| 18 | Mínimo privilegio en la base: el backend usa un rol propio con acceso solo a lo que necesita; **nadie usa el superusuario en operación normal**. | Parcial | backend#103 ([ENG-138](https://linear.app/summercamp-pasantes/issue/ENG-138), *In Review*) · [`eng138-rol-backend.sql`](https://github.com/Proyecto-final-Mediconnect/mediconnect-backend/blob/main/prisma/sql/eng138-rol-backend.sql) · [`rol-backend.md`](https://github.com/Proyecto-final-Mediconnect/mediconnect-backend/blob/main/docs/security/rol-backend.md) · [`backend-role.integration.spec.ts`](https://github.com/Proyecto-final-Mediconnect/mediconnect-backend/blob/main/test/backend-role.integration.spec.ts) | Lo que mergeó backend#103 es la **parte 1**: el rol `mediconnect_backend` no es dueño de nada (no puede desactivar triggers, hacer DDL ni `TRUNCATE`) y no tiene `UPDATE`/`DELETE` sobre las cinco tablas append-only. **Pero se creó con `BYPASSRLS`**: el título del ticket ("sin BYPASSRLS") todavía no se cumple, porque RLS por usuario desde Prisma es la parte 2, sin ticket propio. Además, crear el rol y cambiar `DATABASE_URL` en Render son **pasos manuales**, y al 04/11 no hay constancia (ni en el repo ni en Linear) de que se hayan hecho: hasta entonces el backend sigue conectando como `postgres`. Las migraciones siguen corriendo como `postgres` desde GitHub Actions; eso es esperable y está documentado. |
+| 18 | Mínimo privilegio en la base: el backend usa un rol propio con acceso solo a lo que necesita; **nadie usa el superusuario en operación normal**. | Parcial | backend#103 ([ENG-138](https://linear.app/summercamp-pasantes/issue/ENG-138), *In Review*) · [`eng138-rol-backend.sql`](https://github.com/Proyecto-final-Mediconnect/mediconnect-backend/blob/main/prisma/sql/eng138-rol-backend.sql) · [`rol-backend.md`](https://github.com/Proyecto-final-Mediconnect/mediconnect-backend/blob/main/docs/security/rol-backend.md) · [`backend-role.integration.spec.ts`](https://github.com/Proyecto-final-Mediconnect/mediconnect-backend/blob/main/test/backend-role.integration.spec.ts) | Lo que mergeó backend#103 es la **parte 1**: el rol `mediconnect_backend` no es dueño de nada (no puede desactivar triggers, hacer DDL ni `TRUNCATE`) y no tiene `UPDATE`/`DELETE` sobre las cinco tablas append-only. **Pero se creó con `BYPASSRLS`**: el título del ticket ("sin BYPASSRLS") todavía no se cumple, porque RLS por usuario desde Prisma es la parte 2, sin ticket propio. Además, crear el rol y cambiar `DATABASE_URL` en Render son **pasos manuales**, y **el 09/11 se verificó en Supabase que el rol `mediconnect_backend` no existe**: el backend sigue conectando como `postgres`. Las migraciones siguen corriendo como `postgres` desde GitHub Actions; eso es esperable y está documentado. |
 
 ### §5.5.3 — Capa de datos
 
@@ -364,7 +364,7 @@ São Paulo es la región con menor latencia para usuarios argentinos.
 
 ## Cómo mantener este documento
 
-Cuando un PR cambia el estado de una fila (por ejemplo, al mergear ENG-88 la fila 16
-pasa a Cumplido), el mismo PR, o uno en este repo que lo referencie, actualiza la
+Cuando un PR cambia el estado de una fila (por ejemplo, cuando Render use el rol de ENG-138 la fila 18
+cambia), el mismo PR, o uno en este repo que lo referencie, actualiza la
 fila, el resumen y la fecha de corte. El [checklist de cierre de
 release](checklist-cierre-de-release.md) pide revisarlo en cada release.
