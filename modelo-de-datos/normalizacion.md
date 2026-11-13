@@ -4,7 +4,7 @@ El esquema relacional de MediConnect se diseñó en **Tercera Forma Normal (3FN)
 justifica el cumplimiento de cada forma normal con ejemplos del propio modelo y explica las
 denormalizaciones deliberadas (todas justificadas).
 
-> **Al día con `main` del 04/11/2026** (32 tablas, ENG-186). Se revisaron las tablas que entraron
+> **Al día con `main` del 09/11/2026** (32 tablas, ENG-186). Se revisaron las tablas que entraron
 > después del diseño original: ninguna rompe la 3FN, y una —`chain_head_snapshots`— es una
 > denormalización deliberada que se suma a la tabla del final. También se corrigió la afirmación
 > sobre el append-only: lo hacen **triggers**, no políticas de RLS.
@@ -101,7 +101,7 @@ razones de dominio y performance:
     que la otorgó. El conflicto con el derecho de supresión era la **decisión D1**, resuelta en
     ENG-86: la baja anonimiza el perfil (`deleted_at`) en lugar de borrar la fila.
 
-### Append-only: cuatro tablas, por trigger
+### Append-only: cuatro tablas, por trigger (más `patient_documents`, caso intermedio)
 
 Cuatro tablas no admiten `UPDATE`, `DELETE` ni `TRUNCATE`: `clinical_record_entries`,
 `audit_logs`, `medipass_access_logs` y `legal_acceptances`. `patient_documents` es un caso

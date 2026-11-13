@@ -7,7 +7,7 @@ Ver el diagrama en [`der.md`](./der.md) y la justificación de normalización en
 Convenciones: PK `id UUID DEFAULT gen_random_uuid()` salvo indicación; `created_at TIMESTAMPTZ
 DEFAULT now()`.
 
-> **Estado: al día con `main` del 04/11/2026** (32 tablas, 13 enums, 42 migraciones aplicadas).
+> **Estado: al día con `main` del 09/11/2026** (commit `7190e96` del backend; 32 tablas, 13 enums, 48 migraciones aplicadas).
 >
 > Este documento se escribió en ENG-89 como **diseño**, antes de implementar, y hasta ENG-158 se
 > había tocado por última vez el 27/07. En el medio entraron 20 migraciones. ENG-158 lo pasó de
@@ -27,7 +27,8 @@ DEFAULT now()`.
 >
 > **Cómo verificar que sigue al día:** `grep -c '^model ' mediconnect-backend/prisma/schema.prisma`
 > tiene que dar la cantidad de tablas de este documento, y
-> `ls mediconnect-backend/prisma/migrations | wc -l` la cantidad declarada arriba. El detalle de
+> `find mediconnect-backend/prisma/migrations -mindepth 1 -maxdepth 1 -type d | wc -l` la cantidad declarada arriba
+> (sin contar `migration_lock.toml`). El detalle de
 > privilegios y triggers está en [Estado real de RLS](#estado-real-de-rls-y-privilegios-por-tabla)
 > e [Integridad e inmutabilidad](#integridad-e-inmutabilidad-triggers-y-códigos-de-error), que se
 > derivan de las migraciones y no del diseño.
@@ -200,8 +201,8 @@ es una constancia: el valor probatorio depende de que nadie —ni el equipo— p
 ni la versión después del hecho. Ver
 [Integridad e inmutabilidad](#integridad-e-inmutabilidad-triggers-y-códigos-de-error).
 
-**RLS:** habilitada **sin ninguna política**, o sea denegado por defecto para `authenticated` y
-`anon`. La escribe y la lee el backend por Prisma: `JwtAuthGuard` consulta la aceptación vigente
+**RLS:** habilitada **sin ninguna política permisiva**, o sea denegado por defecto para `authenticated` y
+`anon` (solo tiene la restrictiva `mfa_aal2_required` de ENG-88, que quita acceso y nunca lo da). La escribe y la lee el backend por Prisma: `JwtAuthGuard` consulta la aceptación vigente
 en cada request que no esté marcada con `@SkipLegal()`.
 
 ---
@@ -612,7 +613,9 @@ Mensajes del chat (ADR-011, Supabase Realtime).
 | `conversation_id` | uuid | FK → `conversations.id` ON DELETE CASCADE |
 | `sender_id` | uuid | FK → `profiles.id` |
 | `content` | text | |
-| `attachment_url` | text | Adjunto en Storage |
+| `attachment_url` | text | Ruta del adjunto en el bucket privado `chat-attachments` (ENG-102); no es una URL, se firma al pedirlo |
+| `attachment_mime` | text | `application/pdf`, `image/jpeg` o `image/png`; `null` si no hay adjunto (CHECK) |
+| `attachment_size` | integer | Tamaño en bytes, entre 1 y 10 MiB; `null` si no hay adjunto (CHECK) |
 | `read_at` / `created_at` | timestamptz | |
 
 **RLS:** solo los dos participantes de la conversación (aplica también a la suscripción Realtime).
@@ -653,6 +656,9 @@ Tokens de Expo Push por dispositivo.
 | `token` | text | UK |
 | `platform` | text | `ios` / `android` |
 | `created_at` | timestamptz | |
+
+**RLS:** habilitada sin políticas desde ENG-71, con `ALL` revocado a `anon` y `authenticated`. La
+escribe y la lee solo el backend por Prisma.
 
 ---
 
@@ -749,15 +755,16 @@ la tarjeta, nunca por los dos: `medipass_code_id` pasó a nullable, se agregó
 la tarjeta revoca la anterior y corta los accesos abiertos con ella, sin tocar
 los que se abrieron con el código.
 
-**RLS:** habilitada sin políticas, con los privilegios revocados a `anon` y
-`authenticated`. Solo la toca el backend por Prisma.
+**RLS:** habilitada sin políticas permisivas, con los privilegios revocados a `anon` y
+`authenticated`. La escribe y la lee el backend por Prisma; la única política es la restrictiva
+`mfa_aal2_required` (ENG-88), que no da acceso.
 
 ---
 
 ## EP-10 — Plataforma y Auditoría
 
 ### `audit_logs`
-Bitácora inmutable (append-only vía RLS) de accesos a HC y MediPass, y acciones sensibles.
+Bitácora inmutable (append-only por trigger) de accesos a HC y MediPass, y acciones sensibles.
 
 | Columna | Tipo | Restricciones |
 |---------|------|---------------|
@@ -827,7 +834,7 @@ Si alguna de las dos falla, el job reporta `ANCHOR_REGRESSION`. `timestamptz(3)`
 mismo motivo que en `clinical_record_entries`: los milisegundos son la precisión con la que la
 aplicación calcula los hashes.
 
-**RLS:** sin habilitar, y sin `GRANT`. La escribe y la lee únicamente el job, por Prisma.
+**RLS:** habilitada sin políticas (nivel 2), y sin `GRANT`. La escribe y la lee únicamente el job, por Prisma.
 
 ---
 
@@ -970,13 +977,14 @@ por Prisma como dueño.
 > todavía. Cuando entre la parte 2 de ENG-138 —que haga que RLS filtre cada consulta por el
 > usuario logueado— sí van a necesitarlos.
 
-### Nivel 2 — RLS habilitada sin ninguna política (14 tablas)
+### Nivel 2 — RLS habilitada sin ninguna política permisiva (15 tablas)
 
 `audit_logs`, `chain_head_snapshots`, `consultations`, `integrity_checks`, `legal_acceptances`,
 `medipass_access_logs`, `medipass_codes`, `medipass_emergency_cards`, `medipass_sessions`,
-`notifications`, `patient_documents`, `payment_webhook_events`, `refunds`, `video_sessions`.
+`notifications`, `patient_documents`, `payment_webhook_events`, `push_tokens` (ENG-71), `refunds`,
+`video_sessions`.
 
-RLS activa con cero políticas significa **denegado por defecto**: ningún `SELECT` de
+RLS activa con cero políticas permisivas significa **denegado por defecto**: ningún `SELECT` de
 `authenticated` ni de `anon` devuelve una fila. Todo el acceso pasa por el backend, que entra como
 dueño y filtra en el código.
 
@@ -984,17 +992,30 @@ Esto importa más de lo que parece, y el caso de MediPass lo muestra: **la `anon
 viaja en el bundle de la web y no es un secreto**. Sin RLS, cualquiera con esa clave leía
 `medipass_codes` entera y abría el MediPass de cualquier paciente sin escanear nada.
 
+**El patrón `mfa_aal2_required` (ENG-88).** La migración `20261109120000_eng88_mfa_rls` suma una
+política `RESTRICTIVE` con ese nombre, `FOR ALL TO authenticated`, en **21 tablas**: las 11 del nivel 1
+sin `specialties` (`profiles`, `patients`, `professionals`, `professional_specialties`,
+`schedule_rules`, `schedule_blocks`, `appointments`, `payments`, `clinical_record_entries`,
+`conversations`, `messages`) y 10 del nivel 2 (`refunds`, `patient_documents`, `notifications`,
+`video_sessions`, `medipass_codes`, `medipass_sessions`, `medipass_access_logs`,
+`medipass_emergency_cards`, `legal_acceptances`, `audit_logs`), más `storage.objects` y
+`realtime.messages`. Usa `public.mfa_ok()`: `true` si el JWT es `aal2` o si la persona no tiene
+factor verificado. Al ser restrictiva se suma con `AND` a lo que ya haya: **no da acceso a nada**,
+solo se lo quita a una sesión `aal1` de quien activó la verificación en dos pasos. Por eso en el
+nivel 2 sigue valiendo "cero políticas permisivas", aunque `pg_policies` ya muestre una fila. El
+backend no queda sujeto (`BYPASSRLS`).
+
 La contracara es que, en estas tablas, el filtrado por dueño es responsabilidad del código y no de
 la base, y por eso cada consulta del backend lleva el `patient_id` explícito.
 
-### Nivel 3 — Sin RLS y sin `GRANT` (6 tablas)
+### Nivel 3 — Sin RLS y sin `GRANT` (5 tablas)
 
-`cancellation_policies`, `consultation_summaries`, `professional_education`, `push_tokens`,
-`review_responses`, `reviews`.
+`cancellation_policies`, `consultation_summaries`, `professional_education`, `review_responses`,
+`reviews`.
 
-> Eran 12 cuando se escribió ENG-158, el 21/10. Seis se movieron al estrenarse: el chat (ENG-70)
+> Eran 12 cuando se escribió ENG-158, el 21/10. Siete se movieron al estrenarse: el chat (ENG-70)
 > llevó `conversations` y `messages` al nivel 1, y `chain_head_snapshots`, `integrity_checks`,
-> `notifications` y `refunds` quedaron en el nivel 2. **La convención funcionó**: cada historia
+> `notifications` y `refunds` quedaron en el nivel 2, igual que `push_tokens` con ENG-71 (09/11). **La convención funcionó**: cada historia
 > cerró la tabla que empezó a usar.
 
 Estas tablas se crearon con el esquema inicial (EP-02 / EP-10) y todavía **no las estrena ninguna
@@ -1010,7 +1031,7 @@ las filas, para cualquier usuario autenticado— porque no hay ninguna política
 La convención del proyecto es justamente evitar eso: **la historia que estrena una tabla trae sus
 permisos**. Es lo que hicieron ENG-48 (`professionals`), ENG-54 (`appointments`), ENG-57
 (`clinical_record_entries`), ENG-63 (`payments`) y ENG-72/73 (`medipass_*`), cada una cerrando la
-tabla que empezaba a usar. Quien estrene una de las 12 que quedan tiene que hacer lo mismo en la
+tabla que empezaba a usar. Quien estrene una de las 5 que quedan tiene que hacer lo mismo en la
 misma migración.
 
 ### Nivel 4 — Append-only por trigger (4 tablas)
@@ -1018,10 +1039,10 @@ misma migración.
 Las de la sección anterior: `clinical_record_entries`, `audit_logs`, `medipass_access_logs` y
 `legal_acceptances`. Las cuatro están además en el nivel 1 o 2.
 
-Las dos bitácoras (`audit_logs` y `medipass_access_logs`) van a sumar además un trigger que **les
-pone la hora del servidor** (ENG-145). **Pendiente:** entra con backend#105, que todavía no está
-mergeado. Append-only sin eso deja escribir hoy una entrada fechada el mes pasado, y una fila
-inmutable con fecha falsa no prueba nada.
+Las dos bitácoras (`audit_logs` y `medipass_access_logs`) tienen además un trigger `BEFORE INSERT`
+que **les pone la hora del servidor** (ENG-145, backend#105, migración
+`20261104150000_eng145_hora_servidor_bitacoras`). Append-only sin eso dejaba escribir una entrada
+fechada el mes pasado, y una fila inmutable con fecha falsa no prueba nada.
 
 `patient_documents` es un caso intermedio: su trigger deja marcar `withdrawn_at` una sola vez y
 nada más. Es un nivel aparte y no una variante del 2, porque el trigger protege contra
@@ -1032,8 +1053,9 @@ puede hacer** una vez que se llegó.
 
 Transversal a los cuatro niveles anteriores, y entró en backend#103.
 
-Hasta ENG-138 el backend se conectaba como **`postgres`**: superusuario y dueño de todas las
-tablas. Un dueño puede `ALTER TABLE ... DISABLE TRIGGER`, así que una inyección SQL o un bug en
+Hasta correr el script de ENG-138 el backend se conecta como **`postgres`**, y **hoy sigue siendo
+así en producción**: el 09/11 se verificó que el rol `mediconnect_backend` todavía no existe en
+Supabase. `postgres` es superusuario y dueño de todas las tablas. Un dueño puede `ALTER TABLE ... DISABLE TRIGGER`, así que una inyección SQL o un bug en
 una consulta cruda podía apagar los triggers que hacen inalterable la historia clínica, la
 auditoría y la constancia de consentimiento, y después reescribirlas. **Toda la garantía dependía
 de que el código nunca se equivocara.**

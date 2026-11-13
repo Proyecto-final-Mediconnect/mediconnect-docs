@@ -7,7 +7,7 @@ Diagrama completo del esquema `public` sobre PostgreSQL (Supabase). La identidad
 > render directo en GitHub/Confluence. Especificación columna por columna en
 > [`esquema.md`](./esquema.md).
 >
-> **Al día con `main` del 04/11/2026: 32 tablas** (ENG-186). Para comprobar que sigue sincronizado,
+> **Al día con `main` del 09/11/2026: 32 tablas** (ENG-186). Para comprobar que sigue sincronizado,
 > `grep -c '^model ' mediconnect-backend/prisma/schema.prisma` tiene que coincidir con la cantidad
 > de entidades del diagrama.
 
@@ -266,6 +266,8 @@ erDiagram
         uuid sender_id FK
         text content
         text attachment_url
+        text attachment_mime
+        int attachment_size
         timestamptz read_at
         timestamptz created_at
     }
