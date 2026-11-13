@@ -121,7 +121,7 @@ están hechos: ver [Lo que va más allá del Sprint 0](#lo-que-va-más-allá-del
 | 30 | Pre-commit hook con gitleaks. | Pendiente | Ningún repo tiene `.husky/`, `.pre-commit-config.yaml` ni hook equivalente | La única barrera es el job de CI (fila 2). Un secreto commiteado llega igual al historial de la rama remota antes de que CI lo frene. |
 | 31 | TruffleHog en cada PR como segunda línea. | Cumplido distinto | Ver fila 2 (gitleaks) | — |
 | 32 | Rotación de secretos semestral, o inmediata ante sospecha de compromiso. | Pendiente | Sin registro de rotaciones | No hay calendario ni registro. Con el proyecto arrancado en julio, la primera rotación semestral vence en enero de 2027. |
-| 33 | `npm audit` en CI sobre cada PR, con bloqueo ante vulnerabilidades críticas. | Cumplido distinto | Ver fila 1 | Dependabot abre los PRs de actualización ([`dependabot.yml`](https://github.com/Proyecto-final-Mediconnect/mediconnect-backend/blob/main/.github/dependabot.yml)). |
+| 33 | `npm audit` en CI sobre cada PR, con bloqueo ante vulnerabilidades críticas. | Cumplido distinto | Ver fila 1 | La auditoría corre en CI (fila 1). Dependabot, que abría los PRs de actualización, **se sacó el 13/11** hasta después de la entrega (backend#122, web#84, mobile#51): las actualizaciones se hacen a mano. |
 
 ### §5.5.6 — Capa de monitoreo y observabilidad
 
