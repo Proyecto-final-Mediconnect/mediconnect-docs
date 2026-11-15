@@ -32,7 +32,7 @@ Release: `X.Y.Z` · Repo: `mediconnect-…` · Staging verificado el: `DD/MM/AAA
 - [ ] **Tests de RLS en verde** para todos los módulos del release.
       Evidencia: corrida de `Integration Tests` sobre `release/X.Y.Z` → <link>
 - [ ] **Sin vulnerabilidades high ni critical** en dependencias de producción.
-      Evidencia: job `Dependencias` de `Security` sobre `release/X.Y.Z` → <link>
+      Evidencia: job `Dependencias (pnpm audit)` (backend/web) o `Dependencias (npm audit)` (mobile) de `Security` sobre `release/X.Y.Z` → <link>
       (backend/web: `pnpm audit --prod --audit-level=high`; mobile: `npm audit --omit=dev --audit-level=high`)
 - [ ] **Sin secretos en el código** (gitleaks limpio; el Sprint 0 dice TruffleHog).
       Evidencia: `docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:latest git /repo --redact --log-opts="origin/main..origin/release/X.Y.Z"` → sin hallazgos
@@ -59,7 +59,7 @@ Release: `X.Y.Z` · Repo: `mediconnect-…` · Staging verificado el: `DD/MM/AAA
       `mediconnect_backend.` (no copiar la URL: tiene la contraseña), y en el SQL Editor
       `select count(*) from pg_stat_activity where usename = 'mediconnect_backend';` da más de 0 → …
 - [ ] **Migraciones del release revisadas:** toda tabla nueva con datos clínicos o PII
-      tiene RLS y `FORCE ROW LEVEL SECURITY`, y si es append-only revoca
+      tiene RLS habilitada y `REVOKE` a `anon`/`authenticated` (o políticas, si el cliente la lee directo), y `FORCE ROW LEVEL SECURITY` solo si el backend no necesita escribirla fuera de RLS (hoy: `profiles`, `patients`, `professionals`, `clinical_record_entries`; en `appointments` y `payments` no, porque el webhook de MercadoPago escribe como dueño). Si es append-only, revoca
       `UPDATE`/`DELETE` al rol del backend (`docs/security/rol-backend.md`).
 - [ ] **Cadena de hash íntegra:** la última corrida de `Integrity Check` está en verde
       y el ancla coincide con la anterior o creció. Evidencia → <link>
