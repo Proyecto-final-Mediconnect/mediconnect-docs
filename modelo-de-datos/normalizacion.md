@@ -4,7 +4,7 @@ El esquema relacional de MediConnect se diseñó en **Tercera Forma Normal (3FN)
 justifica el cumplimiento de cada forma normal con ejemplos del propio modelo y explica las
 denormalizaciones deliberadas (todas justificadas).
 
-> **Al día con `main` del 09/11/2026** (32 tablas, ENG-186). Se revisaron las tablas que entraron
+> **Al día con `main` del 15/11/2026** (33 tablas; ENG-186 y, después, `review_prompt_dismissals`, ENG-190, sin impacto en la 3FN). Se revisaron las tablas que entraron
 > después del diseño original: ninguna rompe la 3FN, y una —`chain_head_snapshots`— es una
 > denormalización deliberada que se suma a la tabla del final. También se corrigió la afirmación
 > sobre el append-only: lo hacen **triggers**, no políticas de RLS.

@@ -7,7 +7,7 @@ Diagrama completo del esquema `public` sobre PostgreSQL (Supabase). La identidad
 > render directo en GitHub/Confluence. Especificación columna por columna en
 > [`esquema.md`](./esquema.md).
 >
-> **Al día con `main` del 09/11/2026: 32 tablas** (ENG-186). Para comprobar que sigue sincronizado,
+> **Al día con `main` del 15/11/2026: 33 tablas** (ENG-186 y ENG-190). Para comprobar que sigue sincronizado,
 > `grep -c '^model ' mediconnect-backend/prisma/schema.prisma` tiene que coincidir con la cantidad
 > de entidades del diagrama.
 
@@ -28,6 +28,7 @@ erDiagram
     profiles ||--o| professionals : es
     profiles ||--o{ notifications : recibe
     profiles ||--o{ push_tokens : registra
+    profiles ||--o{ review_prompt_dismissals : descarta
     profiles ||--o{ messages : envia
 
     %% ===== Catalogo y Resenas (EP-02) =====
@@ -83,9 +84,10 @@ erDiagram
     profiles ||--o{ legal_acceptances : acepta
     patients ||--o| chain_head_snapshots : ancla
     patients ||--o{ medipass_emergency_cards : imprime
-    medipass_emergency_cards ||--o{ medipass_sessions : habilita
+    medipass_emergency_cards |o--o{ medipass_sessions : habilita
     patients ||--o{ patient_documents : aporta
     appointments ||--o{ notifications : origina
+    appointments ||--o| review_prompt_dismissals : descartada
 
     %% ================= ENTIDADES =================
     profiles {
@@ -183,6 +185,8 @@ erDiagram
         uuid appointment_id FK, UK
         timestamptz started_at
         timestamptz ended_at
+        timestamptz patient_joined_at
+        timestamptz professional_joined_at
         text professional_notes
         timestamptz created_at
     }
@@ -287,6 +291,12 @@ erDiagram
         uuid user_id FK
         text token UK
         text platform
+        timestamptz created_at
+    }
+    review_prompt_dismissals {
+        uuid id PK
+        uuid patient_id FK
+        uuid appointment_id FK, UK
         timestamptz created_at
     }
     medipass_codes {

@@ -7,7 +7,7 @@ Ver el diagrama en [`der.md`](./der.md) y la justificación de normalización en
 Convenciones: PK `id UUID DEFAULT gen_random_uuid()` salvo indicación; `created_at TIMESTAMPTZ
 DEFAULT now()`.
 
-> **Estado: al día con `main` del 09/11/2026** (commit `7190e96` del backend; 32 tablas, 13 enums, 48 migraciones aplicadas).
+> **Estado: al día con `main` del 15/11/2026** (commit `0958901` del backend; 33 tablas, 13 enums, 51 migraciones).
 >
 > Este documento se escribió en ENG-89 como **diseño**, antes de implementar, y hasta ENG-158 se
 > había tocado por última vez el 27/07. En el medio entraron 20 migraciones. ENG-158 lo pasó de
@@ -48,7 +48,7 @@ DEFAULT now()`.
 | `entry_type` | `CONSULTA`, `DIAGNOSTICO`, `PRESCRIPCION`, `ESTUDIO`, `CORRECCION` |
 | `summary_status` | `PENDIENTE_VALIDACION`, `VALIDADO`, `DESCARTADO` |
 | `review_status` | `PENDIENTE_MODERACION`, `APROBADA`, `RECHAZADA` |
-| `notification_type` | `TURNO_RESERVADO`, `RECORDATORIO_24H`, `RECORDATORIO_1H`, `NUEVO_MENSAJE`, `PAGO_CONFIRMADO`, `RESENA_MODERADA`, `TURNO_CANCELADO`, `TURNO_REPROGRAMADO`, `MEDIPASS_ACCESO` |
+| `notification_type` | `TURNO_RESERVADO`, `RECORDATORIO_24H`, `RECORDATORIO_1H`, `NUEVO_MENSAJE`, `PAGO_CONFIRMADO`, `RESENA_MODERADA`, `TURNO_CANCELADO`, `TURNO_REPROGRAMADO`, `MEDIPASS_ACCESO`, `RESENA_PEDIDA` (ENG-190), `PAGO_ACREDITADO` (ENG-199) |
 | `notification_channel` | `IN_APP`, `PUSH`, `EMAIL` |
 | `legal_acceptance_source` | `REGISTER`, `REACCEPT` — por dónde se aceptaron los textos legales (ENG-140) |
 | `patient_document_type` | `ESTUDIO`, `EPICRISIS`, `INFORME`, `RECETA`, `OTRO` — documentación previa que aporta el paciente (ENG-164) |
@@ -163,8 +163,14 @@ Borrar la fila no es posible ni correcto, por tres motivos distintos:
 - **Los pagos y reembolsos** son registros contables.
 
 Lo que sí se suprime: email, teléfono y domicilio, los datos de emergencia y el MediPass, las
-reseñas, los documentos aportados, los avisos, los dispositivos, y la agenda y el perfil público
-del profesional. El email pasa a `baja+<id>@mediconnect.invalid` (`.invalid` es un TLD reservado,
+reseñas, los avisos, los dispositivos, y la agenda y el perfil público del profesional.
+
+Lo que **no** se suprime, aunque pueda parecer que sí: de los **documentos aportados**
+(`patient_documents`) solo se marca `withdrawn_at` y se borra el archivo de Storage, y ese borrado
+es *best-effort* (si falla, solo se loguea); la fila queda con `title`, `source_institution`,
+`sha256` y `storage_path`, que pueden revelar datos de salud. Tampoco se borran los **mensajes del
+chat ni sus adjuntos**: la conversación solo se oculta para quien se dio de baja
+(`patient_hidden_at` / `professional_hidden_at`). El email pasa a `baja+<id>@mediconnect.invalid` (`.invalid` es un TLD reservado,
 RFC 2606) y el acceso se cierra en Supabase Auth.
 
 **La pantalla se lo dice al usuario**, con las dos listas enfrentadas, porque el art. 16 de la
@@ -359,6 +365,7 @@ Sesión efectivamente realizada (glosario: *Consulta*), 1:1 con el turno.
 | `id` | uuid | PK |
 | `appointment_id` | uuid | UK, FK → `appointments.id` |
 | `started_at` / `ended_at` | timestamptz | |
+| `patient_joined_at` / `professional_joined_at` | timestamptz | Primera entrada de cada rol a la sala (ENG-189); nullable. La usa el cierre automático del turno |
 | `professional_notes` | text | Notas privadas del profesional |
 | `created_at` | timestamptz | |
 
@@ -660,6 +667,22 @@ Tokens de Expo Push por dispositivo.
 **RLS:** habilitada sin políticas desde ENG-71, con `ALL` revocado a `anon` y `authenticated`. La
 escribe y la lee solo el backend por Prisma.
 
+### `review_prompt_dismissals`
+El paciente descartó el pedido de reseña de un turno (ENG-190): la tarjeta del inicio no vuelve y
+el mail no sale. Uno por turno.
+
+| Columna | Tipo | Restricciones |
+|---------|------|---------------|
+| `id` | uuid | PK |
+| `patient_id` | uuid | FK → `profiles.id` ON DELETE CASCADE |
+| `appointment_id` | uuid | UK, FK → `appointments.id` ON DELETE CASCADE |
+| `created_at` | timestamptz | |
+
+Índice por `patient_id`.
+
+**RLS:** habilitada sin políticas, con `ALL` revocado a `anon` y `authenticated` (nivel 2). La
+escribe y la lee solo el backend por Prisma.
+
 ---
 
 ## EP-09 — MediPass
@@ -942,7 +965,7 @@ la preimagen del hash.
 
 ## Estado real de RLS y privilegios por tabla
 
-Las 32 tablas no están todas en el mismo estado, y la diferencia es intencional. El proyecto usa
+Las 33 tablas no están todas en el mismo estado, y la diferencia es intencional. El proyecto usa
 **cinco niveles**, de más abierto a más cerrado; los niveles 4 y 5 son transversales a los
 anteriores.
 
@@ -962,8 +985,12 @@ El cliente llega a la tabla por PostgREST con su JWT, y **la autoridad es RLS**.
 | `appointments` | `SELECT, INSERT` | `appointments_select_own`, `appointments_insert_own_patient` |
 | `payments` | `SELECT` | `payments_select_own_patient` |
 | `clinical_record_entries` | `SELECT` | `_select_own_patient`, `_select_assigned_professional`, `_select_own_authored` |
-| `conversations` | `SELECT, UPDATE` | Las dos partes del hilo; el `UPDATE` solo para ocultarlo (ENG-70) |
-| `messages` | `SELECT, INSERT` | Las dos partes de la conversación (ENG-70) |
+| `conversations` | `SELECT` (por columnas: `id`, `patient_id`, `professional_id`, `created_at`; quedan afuera los `*_hidden_at`) | `conversations_select_participants`: las dos partes del hilo (ENG-70) |
+| `messages` | `SELECT` | `messages_select_participants`: las dos partes de la conversación (ENG-70) |
+
+En el chat, `authenticated` solo **lee** (y se suscribe por Realtime): no tiene `INSERT` ni `UPDATE`.
+Mandar mensajes y ocultar un hilo pasa por el backend (Prisma), igual que el resto de lo que no es
+lectura.
 
 **`FORCE ROW LEVEL SECURITY`** está solo en `profiles`, `patients`, `professionals` y
 `clinical_record_entries`. Sin `FORCE`, RLS no se le aplica al dueño de la tabla; con `FORCE`, sí.
@@ -977,12 +1004,12 @@ por Prisma como dueño.
 > todavía. Cuando entre la parte 2 de ENG-138 —que haga que RLS filtre cada consulta por el
 > usuario logueado— sí van a necesitarlos.
 
-### Nivel 2 — RLS habilitada sin ninguna política permisiva (15 tablas)
+### Nivel 2 — RLS habilitada sin ninguna política permisiva (16 tablas)
 
 `audit_logs`, `chain_head_snapshots`, `consultations`, `integrity_checks`, `legal_acceptances`,
 `medipass_access_logs`, `medipass_codes`, `medipass_emergency_cards`, `medipass_sessions`,
 `notifications`, `patient_documents`, `payment_webhook_events`, `push_tokens` (ENG-71), `refunds`,
-`video_sessions`.
+`review_prompt_dismissals` (ENG-190), `video_sessions`.
 
 RLS activa con cero políticas permisivas significa **denegado por defecto**: ningún `SELECT` de
 `authenticated` ni de `anon` devuelve una fila. Todo el acceso pasa por el backend, que entra como
@@ -1076,8 +1103,9 @@ dos capas distintas, y la de privilegios se aplica aunque alguien desactivara la
 **Lo que este rol todavía NO hace.** Conserva `BYPASSRLS`, así que RLS sigue sin filtrarle las
 consultas. Que lo haga exige propagar la identidad del usuario a la base en cada transacción y
 escribir políticas por rol en cada tabla: es la **parte 2 de ENG-138**, un ticket mucho más
-grande. Conviene no confundir las dos cosas al contarlo: lo que hay hoy es *el backend no puede
-desarmar las protecciones*, no *la base filtra por usuario*.
+grande. Conviene no confundir las dos cosas al contarlo: lo que garantiza el script, una vez aplicado,
+es *el backend no puede desarmar las protecciones*, no *la base filtra por usuario*. Y hoy, en
+producción, ni siquiera eso: el rol todavía no existe (ver arriba).
 
 > **No se activa con el merge.** Hay que correr el script
 > (`prisma/sql/eng138-rol-backend.sql`) en Supabase, ponerle contraseña al rol y cambiar
