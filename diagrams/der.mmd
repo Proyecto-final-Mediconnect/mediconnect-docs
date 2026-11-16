@@ -4,6 +4,7 @@ erDiagram
     profiles ||--o| professionals : es
     profiles ||--o{ notifications : recibe
     profiles ||--o{ push_tokens : registra
+    profiles ||--o{ review_prompt_dismissals : descarta
     profiles ||--o{ messages : envia
 
     %% ===== Catalogo y Resenas (EP-02) =====
@@ -45,7 +46,7 @@ erDiagram
     %% ===== MediPass (EP-09) =====
     patients ||--o{ medipass_codes : genera
     patients ||--o{ medipass_sessions : autoriza
-    medipass_codes ||--o| medipass_sessions : habilita
+    medipass_codes |o--o{ medipass_sessions : habilita
     medipass_sessions ||--o{ medipass_access_logs : audita
 
     %% ===== Resenas (EP-02) =====
@@ -58,7 +59,11 @@ erDiagram
     profiles ||--o{ audit_logs : genera
     profiles ||--o{ legal_acceptances : acepta
     patients ||--o| chain_head_snapshots : ancla
+    patients ||--o{ medipass_emergency_cards : imprime
+    medipass_emergency_cards |o--o{ medipass_sessions : habilita
+    patients ||--o{ patient_documents : aporta
     appointments ||--o{ notifications : origina
+    appointments ||--o| review_prompt_dismissals : descartada
 
     %% ================= ENTIDADES =================
     profiles {
@@ -66,6 +71,8 @@ erDiagram
         citext email UK
         user_role role
         boolean mfa_enabled
+        timestamptz deleted_at
+        boolean email_reminders
         timestamptz created_at
         timestamptz updated_at
     }
@@ -154,6 +161,8 @@ erDiagram
         uuid appointment_id FK, UK
         timestamptz started_at
         timestamptz ended_at
+        timestamptz patient_joined_at
+        timestamptz professional_joined_at
         text professional_notes
         timestamptz created_at
     }
@@ -237,6 +246,8 @@ erDiagram
         uuid sender_id FK
         text content
         text attachment_url
+        text attachment_mime
+        int attachment_size
         timestamptz read_at
         timestamptz created_at
     }
@@ -258,6 +269,12 @@ erDiagram
         text platform
         timestamptz created_at
     }
+    review_prompt_dismissals {
+        uuid id PK
+        uuid patient_id FK
+        uuid appointment_id FK, UK
+        timestamptz created_at
+    }
     medipass_codes {
         uuid id PK
         uuid patient_id FK
@@ -270,6 +287,7 @@ erDiagram
         uuid id PK
         uuid patient_id FK
         uuid medipass_code_id FK
+        uuid emergency_card_id FK
         uuid consultant_profile_id FK
         text consultant_name
         varchar consultant_license
@@ -336,4 +354,25 @@ erDiagram
         bigint sequence_number
         timestamptz first_seen_at
         timestamptz updated_at
+    }
+    medipass_emergency_cards {
+        uuid id PK
+        uuid patient_id FK
+        char token_hash UK
+        timestamptz created_at
+        timestamptz revoked_at
+    }
+    patient_documents {
+        uuid id PK
+        uuid patient_id FK
+        patient_document_type type
+        varchar title
+        date document_date
+        varchar source_institution
+        text storage_path UK
+        char sha256
+        varchar mime_type
+        integer size_bytes
+        timestamptz uploaded_at
+        timestamptz withdrawn_at
     }

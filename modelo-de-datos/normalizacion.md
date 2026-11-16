@@ -4,7 +4,7 @@ El esquema relacional de MediConnect se diseñó en **Tercera Forma Normal (3FN)
 justifica el cumplimiento de cada forma normal con ejemplos del propio modelo y explica las
 denormalizaciones deliberadas (todas justificadas).
 
-> **Al día con `main` del 21/10/2026** (30 tablas, ENG-158). Se revisaron las tablas que entraron
+> **Al día con `main` del 15/11/2026** (33 tablas; ENG-186 y, después, `review_prompt_dismissals`, ENG-190, sin impacto en la 3FN). Se revisaron las tablas que entraron
 > después del diseño original: ninguna rompe la 3FN, y una —`chain_head_snapshots`— es una
 > denormalización deliberada que se suma a la tabla del final. También se corrigió la afirmación
 > sobre el append-only: lo hacen **triggers**, no políticas de RLS.
@@ -62,6 +62,16 @@ denormalizaciones deliberadas (todas justificadas).
   `UNIQUE (appointment_id, type, channel)` no denormalizan nada: el aviso es un hecho propio
   (cuándo se mandó, por qué canal, si se leyó) y el turno es su referencia. La unique es el
   mecanismo de idempotencia del job, no una copia de datos del turno.
+- **La tarjeta de emergencia y el código son dos credenciales, no una columna con dos usos.**
+  `medipass_emergency_cards` es una tabla propia y `medipass_sessions` referencia a una o a la
+  otra con un CHECK que exige exactamente una. La alternativa —una columna `origen` más un
+  `credencial_id` polimórfico— rompería la integridad referencial: ninguna FK podría apuntar a
+  dos tablas distintas, y la base dejaría de garantizar que la credencial existe.
+- **Los documentos del paciente no están en la HC.** `patient_documents` es una tabla aparte y no
+  entradas de `clinical_record_entries`, aunque las dos guarden material clínico. No es
+  redundancia: son hechos de naturaleza distinta —uno lo asienta un profesional y entra a la
+  cadena de hash, el otro lo aporta el paciente y no la toca— y meterlos juntos obligaría a una
+  columna "validado" que decidiría, por fila, si el resto de las garantías aplican.
 - **El código de MediPass.** `medipass_codes.code` es `UNIQUE` desde ENG-170. No es una decisión de
   normalización sino de corrección: sin la restricción, dos pacientes podían tener el mismo código
   vigente y el canje resolvía al paciente equivocado.
@@ -91,10 +101,17 @@ razones de dominio y performance:
     que la otorgó. El conflicto con el derecho de supresión era la **decisión D1**, resuelta en
     ENG-86: la baja anonimiza el perfil (`deleted_at`) en lugar de borrar la fila.
 
-### Append-only: cuatro tablas, por trigger
+### Append-only: cuatro tablas, por trigger (más `patient_documents`, caso intermedio)
 
 Cuatro tablas no admiten `UPDATE`, `DELETE` ni `TRUNCATE`: `clinical_record_entries`,
-`audit_logs`, `medipass_access_logs` y `legal_acceptances`.
+`audit_logs`, `medipass_access_logs` y `legal_acceptances`. `patient_documents` es un caso
+intermedio: solo admite marcar `withdrawn_at`, una vez.
+
+Desde ENG-138 hay además una **segunda capa de privilegios**: el rol `mediconnect_backend` tiene
+`UPDATE`/`DELETE` revocados sobre esas cuatro tablas, así que el permiso falta antes de que el
+trigger tenga que actuar. El mismo nivel suma `integrity_checks` (también con `UPDATE`/`DELETE`/
+`TRUNCATE` revocados, sin trigger) y `patient_documents` (solo `DELETE`/`TRUNCATE` revocados, porque
+su retiro se marca con `UPDATE`).
 
 **Lo hacen triggers, no políticas de RLS.** La versión anterior de este documento afirmaba lo
 segundo y es importante corregirlo, porque son garantías de alcance distinto:
