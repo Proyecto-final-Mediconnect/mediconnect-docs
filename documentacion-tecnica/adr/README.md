@@ -21,7 +21,7 @@ migran, el orden natural es hacerlo de a uno, cuando alguno haya que tocar.
 ## Convenciones
 
 - Un archivo por decisión: `ADR-NNN-<tema-en-kebab-case>.md`.
-- La numeración continúa la del Sprint 0; el próximo libre es el **ADR-019**.
+- La numeración continúa la del Sprint 0; el próximo libre es el **ADR-020**.
 - **Estados:** `Propuesto` · `Aceptado` · `Rechazado` · `Reemplazado por ADR-NNN`.
   Un ADR nace `Propuesto` y pasa a `Aceptado` cuando se aprueba el PR.
 - Sprint 0 §1.7.4: **las decisiones de arquitectura las toman dos
@@ -37,3 +37,4 @@ migran, el orden natural es hacerlo de a uno, cuando alguno haya que tocar.
 | [016](ADR-016-navegacion-mobile.md) | Tecnología de navegación de la app mobile | Propuesto |
 | [017](ADR-017-recorte-alcance-mobile.md) | Distribución mobile sin publicación en stores | Propuesto |
 | [018](ADR-018-politicas-reprogramacion-cancelacion.md) | Políticas de reprogramación, cancelación y ausencias de turnos pagados | Propuesto |
+| [019](ADR-019-modelo-de-cobro.md) | Modelo de cobro: split de MercadoPago, comisión y conciliación | Propuesto |
