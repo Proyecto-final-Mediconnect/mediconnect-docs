@@ -22,19 +22,32 @@ Los tres criterios de aceptación de la issue:
 > de Daily en mobile se redefine en el Planning del 15/08 y se abre como ticket
 > propio.
 
+> **Estado al 21/11/2026 (ENG-151).** El banco de pruebas de este spike (los
+> endpoints `/video/spike/*` y la página `/spike/daily`) **se borró**, como pedía
+> la conclusión 6: la videoconsulta real (ENG-56) está en producción y un endpoint
+> que crea salas a mano era un gasto abierto en un servicio que se factura por
+> uso. Este informe queda como la evidencia del spike. Las rutas y archivos de la
+> tabla de abajo son los que existían durante el spike; lo que sigue vivo es
+> `DailyService` y el embed del Prebuilt, que reusa la videoconsulta.
+>
+> La medición de la sección "Métricas de la llamada de 30 minutos" **nunca se
+> tomó con el banco de pruebas**. Si se quiere tomar, el protocolo se adaptó al
+> flujo real: una videoconsulta desde un turno confirmado, con los minutos de
+> participante leídos del dashboard de Daily.
+
 ## Qué se construyó
 
-| Artefacto | Dónde |
-|---|---|
-| Cliente de la API REST de Daily | `mediconnect-backend/src/video/daily.service.ts` |
-| Configuración de la sala (TTL, propiedades, tope de participantes) | `mediconnect-backend/src/video/daily.config.ts` |
-| Endpoints `/video/spike/*` | `mediconnect-backend/src/video/video.controller.ts` |
-| Embed del Prebuilt | `mediconnect-web/src/features/video/components/DailyPrebuiltFrame.tsx` |
-| Banco de pruebas (`/spike/daily`) | `mediconnect-web/src/features/video/components/SpikeRoomPanel.tsx` |
-| 29 tests unitarios + 7 e2e | `src/video/*.spec.ts`, `test/video.e2e-spec.ts` (backend) y `src/features/video/**/*.test.tsx` (web) |
+| Artefacto | Dónde | Hoy |
+|---|---|---|
+| Cliente de la API REST de Daily | `mediconnect-backend/src/video/daily.service.ts` | Sigue: lo usan la videoconsulta y la prueba de cámara |
+| Configuración de la sala (TTL, propiedades, tope de participantes) | `mediconnect-backend/src/video/daily.config.ts` | Las propiedades pasaron a `consultation.config.ts` |
+| Endpoints `/video/spike/*` | `mediconnect-backend/src/video/video.controller.ts` | Borrado (ENG-151) |
+| Embed del Prebuilt | `mediconnect-web/src/features/video/components/DailyPrebuiltFrame.tsx` | Sigue: lo usa la videoconsulta |
+| Banco de pruebas (`/spike/daily`) | `mediconnect-web/src/features/video/components/SpikeRoomPanel.tsx` | Borrado (ENG-151) |
+| 29 tests unitarios + 7 e2e | `src/video/*.spec.ts`, `test/video.e2e-spec.ts` (backend) y `src/features/video/**/*.test.tsx` (web) | Quedan los de lo que sigue vivo |
 
-Todo lo del spike vive bajo el prefijo `spike`: la ruta de la web es `/spike/daily`,
-los endpoints cuelgan de `/video/spike` y las salas se llaman
+Todo lo del spike vivía bajo el prefijo `spike`: la ruta de la web era `/spike/daily`,
+los endpoints colgaban de `/video/spike` y las salas se llamaban
 `spike-eng51-<8 hex>`. **No es producto** — ENG-56 arranca desde un turno
 confirmado y no deja crear salas a mano. `DailyService` sí queda: es la pieza que
 ese ticket va a reusar.
@@ -179,18 +192,24 @@ repetibles, y no una anécdota.
 
 ### Protocolo
 
+> Desde ENG-151 el banco de pruebas no existe. Los pasos 2, 3, 6 y 7 se hacen con
+> el flujo real: un turno confirmado, la videoconsulta desde "Mis turnos" y las
+> métricas en el dashboard de Daily (*Sessions*), que muestra la duración y los
+> minutos de participante de cada sesión.
+
 1. Cargar `DAILY_API_KEY` en el `.env` del backend y levantar backend + web.
-2. Entrar a `/spike/daily` con un usuario logueado y crear la sala.
-3. Persona A queda en el iframe (rol profesional). Persona B abre
-   *"Entrar como paciente"* **en otra máquina y en otra red** — dos pestañas de la
-   misma computadora comparten conexión y no miden nada útil.
+2. Reservar y pagar un turno de prueba, y entrar a la videoconsulta desde el
+   turno cuando abre la sala (10 minutos antes).
+3. Persona A entra como profesional y persona B como paciente, **en otra máquina
+   y en otra red** — dos pestañas de la misma computadora comparten conexión y no
+   miden nada útil.
 4. Sostener la llamada **30 minutos**, y a los minutos 5, 15 y 25 anotar lo que
    muestra el indicador de red del Prebuilt (arriba a la derecha).
 5. Durante la llamada, hacer al menos una vez: compartir pantalla, silenciar y
    volver a activar el micrófono, y apagar y prender la cámara.
-6. Salir los dos de la sala. Esperar ~1 minuto y tocar *"Ver métricas de la
-   sesión"*: Daily publica los datos de la sesión recién cuando termina.
-7. Borrar la sala con el botón *"Borrar sala"*.
+6. Salir los dos de la sala. Esperar ~1 minuto y leer la sesión en el dashboard
+   de Daily: Daily publica los datos de la sesión recién cuando termina.
+7. La sala se borra sola al vencer, o al cerrar el turno a mano.
 
 ### Tabla a completar
 
@@ -198,7 +217,7 @@ repetibles, y no una anécdota.
 |---|---|---|---|
 | Fecha y hora de la prueba | | | — |
 | Conexión (fibra / 4G / WiFi compartido) | | | — |
-| Duración efectiva | | | `GET /video/spike/rooms/:name/sessions` |
+| Duración efectiva | | | dashboard de Daily (*Sessions*) |
 | Minutos de participante | | | idem (es lo que factura Daily) |
 | Calidad de red min. 5 / 15 / 25 | | | indicador del Prebuilt |
 | Latencia percibida (audio ida y vuelta) | | | subjetiva: contar en voz alta y cronometrar |
@@ -223,8 +242,8 @@ del ADR-010 antes de que ENG-56 se apoye en ella.
 ### El número que importa para el costo
 
 Daily factura por **minuto de participante**, no por minuto de sala: una consulta
-de 30 minutos entre dos personas consume **60**. El endpoint de métricas lo
-devuelve calculado (`participantMinutes`) justamente para poder proyectar:
+de 30 minutos entre dos personas consume **60**. El dashboard de Daily lo
+muestra por sesión, y con eso se proyecta:
 
 ```
 minutos/mes = consultas/mes × duración promedio × 2 participantes
@@ -262,7 +281,7 @@ entran gratis.
    cuándo entra o sale alguien, o cerrar la llamada por código (ver la tabla de la
    sección 2). Para mostrar la sala, el iframe alcanza.
 6. **Borrar `/video/spike/*` y `/spike/daily`** cuando ENG-56 esté mergeado. Son
-   andamio, no producto.
+   andamio, no producto. *Hecho en ENG-151 (21/11/2026).*
 
 ## Cómo correr
 
@@ -271,17 +290,17 @@ entran gratis.
 cd mediconnect-backend
 echo 'DAILY_API_KEY="<key del dashboard de Daily>"' >> .env
 pnpm run start:dev
-pnpm test src/video        # 29 unitarios, sin red
-pnpm run test:e2e video    # 7 e2e del borde HTTP
+pnpm test src/video                      # unitarios, sin red
+pnpm run test:e2e test-room video-consultation   # borde HTTP
 
 # web
 cd mediconnect-web
-pnpm run dev               # entrar a /spike/daily con sesión iniciada
+pnpm run dev               # entrar a la videoconsulta desde un turno confirmado
 pnpm run test:run src/features/video
 ```
 
-Sin `DAILY_API_KEY` todo compila, los tests pasan y la página muestra el 503
-explicando qué falta.
+Sin `DAILY_API_KEY` todo compila, los tests pasan y la videoconsulta muestra el
+503 explicando qué falta.
 
 {{references}}
 Daily REST API — Create room, https://docs.daily.co/reference/rest-api/rooms/create-room
