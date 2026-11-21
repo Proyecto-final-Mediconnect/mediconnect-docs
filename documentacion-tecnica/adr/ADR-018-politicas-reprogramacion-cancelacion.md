@@ -153,5 +153,5 @@ stateDiagram-v2
 | ENG-205 | Cancelación del paciente con límites y comisión (6, 8, 15, 16) |
 | ENG-208 | Avisos de cada transición |
 | ENG-228 | Scheduler para los jobs de los casos 2, 3 y 4 |
-| a crear | Ausencia del profesional y falla técnica (3, 4, 13) |
+| ENG-237 | Ausencia del profesional y falla técnica (3, 4, 13) |
 | ENG-220 | Suspensión o baja del profesional (14) y métrica de cancelaciones (9) |
