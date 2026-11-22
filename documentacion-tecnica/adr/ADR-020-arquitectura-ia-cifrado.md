@@ -318,6 +318,47 @@ Entra holgado en la comisión del ADR-019.
 3. **Con claves:** transcribir un audio ficticio, seudonimizar, resumir y reidentificar.
 4. **Evaluación de Haiku 5.5** con el criterio del punto 5.
 
+### Resultados (22/11, ENG-239) y decisiones que agregan
+
+Informe completo: [spike ENG-239](../spikes/ENG-239-prueba-adr-020.md).
+
+**1. Cifrado de sobre: funciona como se diseñó.** Pasaron las 8 pruebas, y cifrar y
+descifrar una entrada cuesta ~25 µs. Se implementó en ENG-216 con una precisión
+sobre el punto 8: el `kid` se guarda con la **DEK envuelta** (`patient_data_keys`),
+no con cada valor. Así, rotar la KEK re-envuelve solo esa fila, y el valor cifrado
+(`{"$enc": "v1.<nonce>.<etiqueta>.<texto>"}`) no cambia nunca, que es lo que
+exige una HC append-only.
+
+**2. Seudonimización: funciona.** En una transcripción ficticia con trampas, no
+quedó ningún identificador a la vista y no se tapó ningún dato clínico. Agrega
+cuatro cosas al punto 4:
+
+- **Organizaciones:** también se tapan instituciones y obras sociales
+  (`[ORGANIZACION_n]`). Junto con otros datos ayudan a identificar a alguien, y
+  al resumen no le hacen falta.
+- **Reidentificación canónica:** `[PACIENTE]` y `[PROFESIONAL]` vuelven con el
+  nombre completo, no con la forma en que se dijo ("Doctor Gómez" vuelve como
+  "Martín Gómez").
+- **El texto se parte siempre:** con la transcripción entera de 30 minutos, el
+  modelo de entidades no encontró ningún nombre. Se parte en pedazos de hasta
+  ~300 palabras, por oración, y se procesan de a uno.
+- **El modelo se carga una vez y se mantiene:** descartarlo no devuelve la
+  memoria, y recargarlo la hace crecer.
+
+**3. Dónde corre el pipeline (decidido el 22/11): opción A, GitHub Actions.** Con
+la tercera capa, el backend llegaría a ~430–480 MB de los 512 MB de Render free.
+El pipeline de IA (transcripción, seudonimización, resumen y reidentificación) corre
+en un workflow de GitHub Actions, como la verificación de integridad (ENG-85),
+disparado por el scheduler (ENG-228). El backend queda liviano.
+
+El resumen tarda unos minutos más, y no importa: el profesional lo revisa después.
+La KEK y las API keys van como secrets del repo. Se descartaron el plan pago de
+Render (costo) y usar solo las capas 1 y 2 (los nombres de terceros quedarían a la
+vista).
+
+Faltan las pruebas 2 a 4 de la lista de arriba: necesitan una sala de Daily con dos
+personas y las API keys.
+
 ## Implementación
 
 | Ticket | Alcance |
