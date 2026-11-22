@@ -1,0 +1,9 @@
+{
+  "name": "poc-eng239",
+  "private": true,
+  "type": "module",
+  "description": "Prueba de concepto del ADR-020 (ENG-239): cifrado de sobre y seudonimización, sin claves externas.",
+  "dependencies": {
+    "@huggingface/transformers": "3.8.1"
+  }
+}
