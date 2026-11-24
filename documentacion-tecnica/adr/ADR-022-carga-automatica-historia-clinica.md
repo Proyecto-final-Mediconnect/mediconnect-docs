@@ -11,7 +11,7 @@
   - ENG-164: documentos del paciente.
   - ENG-214: IA de la consulta.
   - ENG-136: datos de emergencia del MediPass.
-  - ENG-246 y ENG-247: implementación.
+  - ENG-246: implementación.
 
 ## Contexto y planteo del problema
 
@@ -93,35 +93,61 @@ Lo que mostró:
 1. **La historia clínica la escribe un profesional.** Cada entrada tiene autor y queda
    sellada (Ley 26.529). Lo que viene de afuera no lo escribió nadie de MediConnect:
    **no entra a la cadena**. Se muestra aparte, con su origen.
-2. **El paciente controla sus datos.** Él trae el documento, ve qué se cargaría y
-   elige ítem por ítem. Nada se carga solo.
-3. **Un estándar, no un formato propio.** Se importa IPS-AR porque es el que define el
+2. **Lo que aporta el paciente es parte de lo que ve el médico.** El resumen va
+   junto a sus estudios, ordenado, para que el profesional conozca sus antecedentes
+   (lo marcó el equipo el 24/11: el destino del resumen es la historia, no solo la
+   ficha de emergencia).
+3. **El paciente controla sus datos.** Él trae el documento y decide si suma algo a
+   su MediPass, ítem por ítem. Nada se carga solo.
+4. **Integridad:** lo que se sube es lo que se muestra. Se guarda con su SHA-256 y se
+   compara antes de leerlo.
+5. **Un estándar, no un formato propio.** Se importa IPS-AR porque es el que define el
    Ministerio. Si mañana MediConnect se conecta al bus nacional, recibe el mismo
    documento por otra vía y el lector no cambia.
-4. **Ningún dato clínico sale de la plataforma** para importar. La lectura es local,
+6. **Ningún dato clínico sale de la plataforma** para importar. La lectura es local,
    sin IA ni servicios externos.
 
 ## Decisión
 
-### 1. Importación del resumen IPS por el paciente (ENG-246)
+### 1. El resumen es un documento más de los que aporta el paciente (ENG-246)
 
-1. En "Datos de emergencia" (web y app), el paciente elige su archivo IPS (JSON).
-2. El backend lo lee con una función pura `leerIps()`, la de la prueba de concepto
-   llevada a TypeScript con tests. Devuelve una propuesta en el formato de
-   `UpdateVitalInfoDto`.
-3. El paciente ve la propuesta con una casilla por ítem. Lo que confirma se **suma**
-   a lo que ya tenía, sin duplicados, y se guarda con el `PUT /patients/me/vital` de
-   siempre.
-4. El archivo original se guarda como documento del paciente (ENG-164). La auditoría
-   registra la importación con cantidades, nunca con datos clínicos.
-5. Si el DNI del documento no es el del paciente, se avisa y el paciente decide.
+1. El paciente lo sube donde sube sus estudios: "Mis documentos", en su historia
+   clínica (web y app), con la opción "Resumen de salud (IPS)".
+2. El backend lo valida antes de guardarlo, con una función pura `readIps()`: la de
+   la prueba de concepto llevada a TypeScript con tests. Si no es un resumen IPS, o
+   pasa de 1 MB, no entra.
+3. **Si el DNI del resumen no es el del paciente, no entra.** El médico lo leería
+   como si fuera suyo. Solo se compara si los dos tienen DNI.
+4. Se guarda como cualquier documento de ENG-164:
+   - bucket privado;
+   - cifrado con la clave del paciente (ENG-216);
+   - SHA-256 del original;
+   - cuota;
+   - auditoría;
+   - no se borra (se retira).
 
-### 2. Lo importado, a la vista del profesional (ENG-247)
+   Su tipo es `application/fhir+json`, que el bucket acepta desde la migración de
+   ENG-246.
 
-En la historia clínica del paciente, aparte de las entradas, va la sección
-**"Antecedentes aportados por el paciente"**. Tiene los mismos permisos y la misma
-auditoría que la historia clínica. Si el profesional quiere dejar algo asentado, lo
-escribe él en su evolución.
+### 2. Se ve ordenado, por el paciente y por sus profesionales
+
+- `GET /patient-documents/:id/ips` devuelve problemas, alergias, medicación y
+  vacunas. Tiene los mismos permisos que abrir el archivo: el paciente, o un
+  profesional que puede leer su historia.
+- La lectura queda auditada (`PATIENT_DOCUMENT_VIEW`). Para el profesional falla
+  cerrado: si no se puede registrar el acceso, no se muestra nada.
+- Antes de mostrarlo se compara con el SHA-256 guardado: si el archivo no es el que
+  se subió, no se muestra.
+- En pantalla va en "Documentación aportada por el paciente", marcado **No
+  validado**, aparte de las entradas firmadas. Si el profesional quiere dejar algo
+  asentado, lo escribe él en su evolución.
+
+### 2 bis. Sumarlo al MediPass, si el paciente quiere
+
+Desde el resumen, "Sumar a mi MediPass" muestra las alergias, la medicación y las
+condiciones con una casilla por ítem. Lo elegido se **suma** a los datos de
+emergencia, sin borrar ni repetir, y se guarda con el `PUT /patients/me/vital` de
+siempre.
 
 ### 3. La consulta (ENG-214)
 
@@ -145,25 +171,24 @@ Sigue el ADR-020 tal como está.
 - **Documentos FHIR "casi IPS".** Otros sistemas pueden mandar recursos o códigos
   distintos. El lector ignora lo que no conoce y lo informa ("Se ignora un X"), sin
   fallar.
-- **Un documento de otra persona.** Se detecta por DNI, cuando lo trae, y se avisa.
-  Si no trae DNI, la confirmación del paciente es la defensa.
+- **Un documento de otra persona.** Si trae DNI y no es el del paciente, no entra.
+  Si no trae DNI, depende de que el paciente suba lo suyo, como con un PDF.
 
 ## Consecuencias
 
 - **Positivas:**
   - Hay una respuesta clara a "carga automática", apoyada en el estándar nacional.
-  - El MediPass se completa en segundos.
-  - El profesional ve antecedentes de afuera sin que se mezclen con lo que se
-    asentó en MediConnect.
+  - El profesional ve los antecedentes de afuera, ordenados y auditados, sin que se
+    mezclen con lo que se asentó en MediConnect.
+  - El MediPass se completa en segundos, si el paciente quiere.
 - **Negativas:**
   - Hay que mantener un lector FHIR R4 al lado de las entradas R5.
-  - Guardar el original con su propio tipo de documento lleva una migración
-    (`RESUMEN_IPS`). Se puede evitar guardándolo como `OTRO`.
+  - Una migración chica: el bucket de documentos acepta `application/fhir+json`. No
+    toca datos ni políticas.
 
 ## Implementación
 
 | Orden | Ticket | Qué |
 | --- | --- | --- |
 | — | [ENG-214](https://linear.app/summercamp-pasantes/issue/ENG-214) | La consulta con IA, ya planificada (ADR-020). |
-| 1 | [ENG-246](https://linear.app/summercamp-pasantes/issue/ENG-246) | Importar el resumen IPS y cargar el MediPass. |
-| 2 | [ENG-247](https://linear.app/summercamp-pasantes/issue/ENG-247) | Ver los antecedentes importados al atender. |
+| 1 | [ENG-246](https://linear.app/summercamp-pasantes/issue/ENG-246) | Subir el resumen como documento, verlo ordenado (paciente y profesional) y sumarlo al MediPass. Incluye lo que era ENG-247. |
