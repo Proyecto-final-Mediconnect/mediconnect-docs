@@ -12,7 +12,7 @@ mediconnect-docs/
 ├── 01-inicio-proyecto/        # estudio inicial, plan de proyecto
 ├── 02-sprint-0/               # working agreement, gestión config, arquitectura, testing, USM
 ├── 03-sprints/                # informes y retrospectivas por sprint
-├── documentacion-tecnica/     # ⭐ ADRs (`adr/`) y conclusiones de spikes (`spikes/`)
+├── documentacion-tecnica/     # ⭐ ADRs (`adr/`), spikes (`spikes/`) y seguridad (`seguridad/`)
 ├── modelo-de-datos/           # ⭐ esquema de base de datos, DER y normalización
 ├── diagrams/                  # fuentes de diagramas (C4, DER)
 ├── assets/                    # imágenes y recursos
@@ -27,6 +27,17 @@ El diseño completo de la base de datos PostgreSQL (Supabase) está en
 - [Diagrama Entidad-Relación (DER)](./modelo-de-datos/der.md)
 - [Esquema detallado tabla por tabla](./modelo-de-datos/esquema.md)
 - [Justificación de la normalización (3FN)](./modelo-de-datos/normalizacion.md)
+
+## Seguridad
+
+Dónde está parado el sistema frente a lo que prometió el Sprint 0, y qué se revisa al
+cerrar cada release:
+
+- [Estado de seguridad frente al Sprint 0](./documentacion-tecnica/seguridad/estado-de-seguridad.md)
+  (ENG-167): compromiso por compromiso, con evidencia, más la ubicación de los datos
+  frente a la Ley 25.326 art. 12.
+- [Checklist de seguridad al cierre de una release](./documentacion-tecnica/seguridad/checklist-cierre-de-release.md)
+  (Sprint 0 §4.8.3): se copia en el PR de cada release.
 
 ## Enmiendas al Sprint 0 y al Plan de Proyecto
 
