@@ -21,7 +21,7 @@ migran, el orden natural es hacerlo de a uno, cuando alguno haya que tocar.
 ## Convenciones
 
 - Un archivo por decisión: `ADR-NNN-<tema-en-kebab-case>.md`.
-- La numeración continúa la del Sprint 0; el próximo libre es el **ADR-022**.
+- La numeración continúa la del Sprint 0; el próximo libre es el **ADR-023**.
 - **Estados:** `Propuesto` · `Aceptado` · `Rechazado` · `Reemplazado por ADR-NNN`.
   Un ADR nace `Propuesto` y pasa a `Aceptado` cuando se aprueba el PR.
 - Sprint 0 §1.7.4: **las decisiones de arquitectura las toman dos
@@ -40,3 +40,4 @@ migran, el orden natural es hacerlo de a uno, cuando alguno haya que tocar.
 | [019](ADR-019-modelo-de-cobro.md) | Modelo de cobro: split de MercadoPago, comisión y conciliación | Propuesto |
 | [020](ADR-020-arquitectura-ia-cifrado.md) | Arquitectura segura para la IA clínica y el cifrado de datos sensibles | Propuesto |
 | [021](ADR-021-validacion-de-matriculas.md) | Validación de la matrícula de los profesionales contra el REFEPS | Propuesto |
+| [022](ADR-022-carga-automatica-historia-clinica.md) | Qué es la carga automática de la historia clínica: el resumen IPS que trae el paciente | Propuesto |
